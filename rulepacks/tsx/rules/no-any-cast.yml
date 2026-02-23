@@ -1,0 +1,7 @@
+id: no-any-cast
+language: Tsx
+severity: warning
+message: Casting to any bypasses type safety and can hide slop; fix the type at the source
+rule:
+  any:
+    - pattern: $VALUE as any

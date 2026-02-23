@@ -1,0 +1,14 @@
+id: no-empty-catch
+snapshots:
+  try { run(); } catch (error) {}:
+    labels:
+    - source: try { run(); } catch (error) {}
+      style: primary
+      start: 0
+      end: 31
+  try { run(); } catch {}:
+    labels:
+    - source: try { run(); } catch {}
+      style: primary
+      start: 0
+      end: 23

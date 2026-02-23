@@ -1,0 +1,14 @@
+id: no-loose-nullish-check
+snapshots:
+  if (value == null) handleMissing();:
+    labels:
+    - source: value == null
+      style: primary
+      start: 4
+      end: 17
+  return payload != null;:
+    labels:
+    - source: payload != null
+      style: primary
+      start: 7
+      end: 22

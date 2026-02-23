@@ -1,0 +1,26 @@
+id: no-strict-nullish-check
+snapshots:
+  if (value !== null) useValue(value);:
+    labels:
+    - source: value !== null
+      style: primary
+      start: 4
+      end: 18
+  if (value !== undefined) useValue(value);:
+    labels:
+    - source: value !== undefined
+      style: primary
+      start: 4
+      end: 23
+  if (value === null) handleMissing();:
+    labels:
+    - source: value === null
+      style: primary
+      start: 4
+      end: 18
+  if (value === undefined) handleMissing();:
+    labels:
+    - source: value === undefined
+      style: primary
+      start: 4
+      end: 23

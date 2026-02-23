@@ -1,0 +1,14 @@
+id: no-null-ternary-normalization
+snapshots:
+  'const id = maybeId === null ? null : maybeId;':
+    labels:
+    - source: 'maybeId === null ? null : maybeId'
+      style: primary
+      start: 11
+      end: 44
+  'return value === null ? null : String(value);':
+    labels:
+    - source: 'value === null ? null : String(value)'
+      style: primary
+      start: 7
+      end: 44

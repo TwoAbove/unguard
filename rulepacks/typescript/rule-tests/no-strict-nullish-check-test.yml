@@ -1,0 +1,9 @@
+id: no-strict-nullish-check
+valid:
+  - if (value == null) handleMissing();
+  - if (isMissing(value)) handleMissing();
+invalid:
+  - if (value === null) handleMissing();
+  - if (value !== null) useValue(value);
+  - if (value === undefined) handleMissing();
+  - if (value !== undefined) useValue(value);

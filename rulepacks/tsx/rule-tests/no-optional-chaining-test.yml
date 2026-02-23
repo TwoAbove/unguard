@@ -1,0 +1,8 @@
+id: no-optional-chaining
+valid:
+  - const name = user.profile.name;
+  - const result = user && user.profile;
+invalid:
+  - const name = user?.profile?.name;
+  - const label = config?.["label"];
+  - maybeCallback?.(value);

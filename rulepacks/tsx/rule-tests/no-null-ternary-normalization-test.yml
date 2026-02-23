@@ -1,0 +1,7 @@
+id: no-null-ternary-normalization
+valid:
+  - 'return value === null ? "missing" : String(value);'
+  - "return value == null ? null : String(value);"
+invalid:
+  - "return value === null ? null : String(value);"
+  - "const id = maybeId === null ? null : maybeId;"

@@ -1,0 +1,26 @@
+id: no-nullish-coalescing
+snapshots:
+  const mode = options?.mode ?? "safe";:
+    labels:
+    - source: options?.mode ?? "safe"
+      style: primary
+      start: 13
+      end: 36
+  const provider = providerName ?? "openai";:
+    labels:
+    - source: providerName ?? "openai"
+      style: primary
+      start: 17
+      end: 41
+  const reason = usage.outputTokens.reasoning ?? 0;:
+    labels:
+    - source: usage.outputTokens.reasoning ?? 0
+      style: primary
+      start: 15
+      end: 48
+  const total = usage.inputTokens.total ?? 0;:
+    labels:
+    - source: usage.inputTokens.total ?? 0
+      style: primary
+      start: 14
+      end: 42

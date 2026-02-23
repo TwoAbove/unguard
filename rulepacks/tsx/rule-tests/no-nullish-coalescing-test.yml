@@ -1,0 +1,8 @@
+id: no-nullish-coalescing
+valid:
+  - const total = usage.inputTokens.total;
+  - const total = usage.getTotal();
+invalid:
+  - const total = usage.inputTokens.total ?? 0;
+  - const provider = providerName ?? "openai";
+  - const mode = options?.mode ?? "safe";

@@ -1,0 +1,14 @@
+id: no-double-negation-coercion
+snapshots:
+  const hasBaseUrl = !!data.baseUrl;:
+    labels:
+    - source: '!!data.baseUrl'
+      style: primary
+      start: 19
+      end: 33
+  const isAuthenticated = !!session?.user;:
+    labels:
+    - source: '!!session?.user'
+      style: primary
+      start: 24
+      end: 39

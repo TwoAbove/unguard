@@ -1,0 +1,37 @@
+{
+  "name": "unguard",
+  "version": "0.1.0",
+  "description": "Prove data-shape guarantees with ast-grep rule packs",
+  "author": "TwoAbove",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TwoAbove/unguard.git"
+  },
+  "homepage": "https://github.com/TwoAbove/unguard#readme",
+  "bugs": {
+    "url": "https://github.com/TwoAbove/unguard/issues"
+  },
+  "type": "module",
+  "bin": {
+    "unguard": "./bin/unguard.mjs"
+  },
+  "files": ["bin", "rulepacks"],
+  "scripts": {
+    "scan": "node ./bin/unguard.mjs scan .",
+    "scan:strict": "node ./bin/unguard.mjs scan . --strict",
+    "test:rules:typescript": "ast-grep test -c rulepacks/typescript/sgconfig.yml",
+    "test:rules:tsx": "ast-grep test -c rulepacks/tsx/sgconfig.yml",
+    "test:rules": "npm run test:rules:typescript && npm run test:rules:tsx",
+    "test:rules:typescript:update": "ast-grep test -c rulepacks/typescript/sgconfig.yml -U",
+    "test:rules:tsx:update": "ast-grep test -c rulepacks/tsx/sgconfig.yml -U",
+    "test:rules:update": "npm run test:rules:typescript:update && npm run test:rules:tsx:update",
+    "prepublishOnly": "npm run test:rules"
+  },
+  "dependencies": {
+    "@ast-grep/cli": "^0.39.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

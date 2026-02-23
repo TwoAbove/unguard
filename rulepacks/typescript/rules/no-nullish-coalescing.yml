@@ -1,0 +1,6 @@
+id: no-nullish-coalescing
+language: TypeScript
+severity: warning
+message: Nullish coalescing fallback may mask missing upstream guarantees; prove shape first
+rule:
+  pattern: $VALUE ?? $DEFAULT

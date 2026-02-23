@@ -1,0 +1,14 @@
+id: no-implicit-falsy-check
+snapshots:
+  if (!value) handleMissing();:
+    labels:
+    - source: if (!value) handleMissing();
+      style: primary
+      start: 0
+      end: 28
+  if (!value) { return defaultValue; }:
+    labels:
+    - source: if (!value) { return defaultValue; }
+      style: primary
+      start: 0
+      end: 36

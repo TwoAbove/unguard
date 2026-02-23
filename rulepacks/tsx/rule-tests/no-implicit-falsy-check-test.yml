@@ -1,0 +1,7 @@
+id: no-implicit-falsy-check
+valid:
+  - if (isMissing(value)) handleMissing();
+  - if (value === undefined) handleMissing();
+invalid:
+  - if (!value) handleMissing();
+  - if (!value) { return defaultValue; }

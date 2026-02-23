@@ -1,0 +1,8 @@
+id: no-loose-nullish-check
+language: TypeScript
+severity: warning
+message: Replace loose null checks with explicit upstream guarantees or strict checks
+rule:
+  any:
+    - pattern: $VALUE == null
+    - pattern: $VALUE != null

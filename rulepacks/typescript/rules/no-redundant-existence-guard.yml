@@ -1,0 +1,10 @@
+id: no-redundant-existence-guard
+language: TypeScript
+severity: warning
+message: Nested existence guards indicate missing boundary proof; enforce shape upstream
+rule:
+  any:
+    - pattern: if ($OBJ && $OBJ.$PROP) { $$$BODY }
+    - pattern: if ($OBJ && $OBJ.$PROP) $STMT
+    - pattern: if ($OBJ && $OBJ[$KEY]) { $$$BODY }
+    - pattern: if ($OBJ && $OBJ[$KEY]) $STMT
