@@ -1,0 +1,6 @@
+id: no-optional-property-access
+valid:
+  - const name = user.profile.name;
+invalid:
+  - const name = user?.profile?.name;
+  - const value = config?.setting;

@@ -12,3 +12,15 @@ snapshots:
       style: primary
       start: 24
       end: 39
+  if (!!value) {}:
+    labels:
+    - source: '!!value'
+      style: primary
+      start: 4
+      end: 11
+  return !!user;:
+    labels:
+    - source: '!!user'
+      style: primary
+      start: 7
+      end: 13

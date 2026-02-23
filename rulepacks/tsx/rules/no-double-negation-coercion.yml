@@ -1,8 +1,7 @@
 id: no-double-negation-coercion
 language: Tsx
 severity: warning
-message: Double-negation coercion can hide shape assumptions; prefer explicit boundary guarantees
+message: Double-negation coercion can hide shape assumptions; prefer explicit
+  boundary guarantees
 rule:
-  pattern:
-    context: const $FLAG = !!$VALUE
-    selector: unary_expression
+  pattern: "!!$VALUE"

@@ -1,9 +1,0 @@
-id: no-optional-chaining
-language: TypeScript
-severity: warning
-message: Optional chaining can hide missing upstream guarantees; prove shape at boundaries
-rule:
-  any:
-    - pattern: $OBJ?.$FIELD
-    - pattern: $OBJ?.[$KEY]
-    - pattern: $CALL?.($$$ARGS)

@@ -1,0 +1,7 @@
+id: prefer-default-param-value
+valid:
+  - "function foo(name: string = 'd') { return name; }"
+  - "function foo(name?: string) { return name; }"
+invalid:
+  - "function foo(name?: string) { const n = name ?? 'd'; return n; }"
+  - "function foo(name?: string) { name = name || 'd'; return name; }"

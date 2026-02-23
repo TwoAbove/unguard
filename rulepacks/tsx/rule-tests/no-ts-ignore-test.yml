@@ -1,0 +1,7 @@
+id: no-ts-ignore
+valid:
+  - "// this is a normal comment"
+  - "// TODO: fix this later"
+invalid:
+  - "// @ts-ignore"
+  - "// @ts-expect-error"

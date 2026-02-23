@@ -1,0 +1,6 @@
+id: no-redundant-optional-with-default
+valid:
+  - "function foo(name: string = 'default') {}"
+  - "function foo(name?: string) {}"
+invalid:
+  - "function foo(name?: string = 'default') {}"

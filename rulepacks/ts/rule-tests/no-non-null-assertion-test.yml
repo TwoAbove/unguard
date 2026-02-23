@@ -1,0 +1,7 @@
+id: no-non-null-assertion
+valid:
+  - const name = user.name;
+  - const id = getId();
+invalid:
+  - const name = user!.name;
+  - const id = getId()!;

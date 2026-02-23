@@ -1,7 +1,0 @@
-id: no-logical-or-null-fallback
-valid:
-  - return value ?? null;
-  - return value || fallback;
-invalid:
-  - return titleSection.content.trim() || null;
-  - return extractOpeningNarrativeIfPresent(doc) || null;

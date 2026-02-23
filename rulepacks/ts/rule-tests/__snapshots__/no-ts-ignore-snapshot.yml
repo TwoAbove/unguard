@@ -1,0 +1,14 @@
+id: no-ts-ignore
+snapshots:
+  // @ts-expect-error:
+    labels:
+    - source: // @ts-expect-error
+      style: primary
+      start: 0
+      end: 19
+  // @ts-ignore:
+    labels:
+    - source: // @ts-ignore
+      style: primary
+      start: 0
+      end: 13

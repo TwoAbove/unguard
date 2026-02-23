@@ -6,15 +6,25 @@ snapshots:
       style: primary
       start: 0
       end: 45
-  if (user && user.profile) return user.profile.name;:
-    labels:
-    - source: if (user && user.profile) return user.profile.name;
-      style: primary
-      start: 0
-      end: 51
+    - source: session && session.id
+      style: secondary
+      start: 4
+      end: 25
+    - source: session && session.id
+      style: secondary
+      start: 4
+      end: 25
   if (user && user["profile"]) return user.profile.name;:
     labels:
     - source: if (user && user["profile"]) return user.profile.name;
       style: primary
       start: 0
       end: 54
+    - source: user && user["profile"]
+      style: secondary
+      start: 4
+      end: 27
+    - source: user && user["profile"]
+      style: secondary
+      start: 4
+      end: 27

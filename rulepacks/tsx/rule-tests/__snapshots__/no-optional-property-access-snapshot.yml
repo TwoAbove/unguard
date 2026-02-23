@@ -1,0 +1,14 @@
+id: no-optional-property-access
+snapshots:
+  const name = user?.profile?.name;:
+    labels:
+    - source: user?.profile?.name
+      style: primary
+      start: 13
+      end: 32
+  const value = config?.setting;:
+    labels:
+    - source: config?.setting
+      style: primary
+      start: 14
+      end: 29

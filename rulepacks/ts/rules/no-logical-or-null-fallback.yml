@@ -1,6 +1,0 @@
-id: no-logical-or-null-fallback
-language: TypeScript
-severity: warning
-message: Logical-or null fallback can hide shape issues; validate upstream instead
-rule:
-  pattern: $VALUE || null

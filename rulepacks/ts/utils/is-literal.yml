@@ -1,0 +1,12 @@
+id: is-literal
+language: TypeScript
+rule:
+  any:
+    - kind: string
+    - kind: number
+    - kind: "null"
+    - kind: "false"
+    - kind: "true"
+    - kind: array
+    - kind: object
+    - kind: undefined

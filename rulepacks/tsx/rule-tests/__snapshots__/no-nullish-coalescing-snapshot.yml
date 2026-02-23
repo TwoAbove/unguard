@@ -12,12 +12,6 @@ snapshots:
       style: primary
       start: 17
       end: 41
-  const reason = usage.outputTokens.reasoning ?? 0;:
-    labels:
-    - source: usage.outputTokens.reasoning ?? 0
-      style: primary
-      start: 15
-      end: 48
   const total = usage.inputTokens.total ?? 0;:
     labels:
     - source: usage.inputTokens.total ?? 0

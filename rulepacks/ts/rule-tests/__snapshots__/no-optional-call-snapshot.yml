@@ -1,0 +1,14 @@
+id: no-optional-call
+snapshots:
+  maybeCallback?.(value);:
+    labels:
+    - source: maybeCallback?.(value)
+      style: primary
+      start: 0
+      end: 22
+  obj.method?.(arg);:
+    labels:
+    - source: obj.method?.(arg)
+      style: primary
+      start: 0
+      end: 17

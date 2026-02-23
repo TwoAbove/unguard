@@ -1,0 +1,9 @@
+id: no-redundant-optional-with-default
+language: Tsx
+severity: warning
+message: Parameter has both ? and a default value; the ? is redundant since
+  defaults make params optional
+rule:
+  kind: optional_parameter
+  has:
+    regex: =

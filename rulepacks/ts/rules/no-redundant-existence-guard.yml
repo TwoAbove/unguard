@@ -3,8 +3,10 @@ language: TypeScript
 severity: warning
 message: Nested existence guards indicate missing boundary proof; enforce shape upstream
 rule:
-  any:
-    - pattern: if ($OBJ && $OBJ.$PROP) { $$$BODY }
-    - pattern: if ($OBJ && $OBJ.$PROP) $STMT
-    - pattern: if ($OBJ && $OBJ[$KEY]) { $$$BODY }
-    - pattern: if ($OBJ && $OBJ[$KEY]) $STMT
+  kind: if_statement
+  has:
+    field: condition
+    has:
+      any:
+        - pattern: $OBJ && $OBJ.$PROP
+        - pattern: $OBJ && $OBJ[$KEY]

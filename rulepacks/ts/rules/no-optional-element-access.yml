@@ -1,0 +1,6 @@
+id: no-optional-element-access
+language: TypeScript
+severity: warning
+message: Optional element access can hide missing upstream guarantees; prove shape at boundaries
+rule:
+  pattern: $OBJ?.[$KEY]

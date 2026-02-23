@@ -1,0 +1,13 @@
+id: no-logical-or-fallback
+language: TypeScript
+severity: warning
+message: Logical-or fallback can hide missing guarantees; validate and normalize at boundaries
+rule:
+  all:
+    - kind: binary_expression
+    - has:
+        field: operator
+        regex: ^\|\|$
+    - has:
+        field: right
+        matches: is-literal

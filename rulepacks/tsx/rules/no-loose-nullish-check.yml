@@ -3,6 +3,11 @@ language: Tsx
 severity: warning
 message: Replace loose null checks with explicit upstream guarantees or strict checks
 rule:
-  any:
-    - pattern: $VALUE == null
-    - pattern: $VALUE != null
+  all:
+    - kind: binary_expression
+    - has:
+        field: operator
+        regex: ^(==|!=)$
+    - has:
+        field: right
+        matches: is-nullish

@@ -1,0 +1,6 @@
+id: no-optional-property-access
+language: TypeScript
+severity: warning
+message: Optional property access can hide missing upstream guarantees; prove shape at boundaries
+rule:
+  pattern: $OBJ?.$FIELD

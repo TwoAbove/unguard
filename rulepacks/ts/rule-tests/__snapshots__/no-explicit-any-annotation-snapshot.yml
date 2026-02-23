@@ -1,0 +1,20 @@
+id: no-explicit-any-annotation
+snapshots:
+  'const baz: Promise<any> = fetch();':
+    labels:
+    - source: any
+      style: primary
+      start: 19
+      end: 22
+  'function foo(x: any) {}':
+    labels:
+    - source: any
+      style: primary
+      start: 16
+      end: 19
+  'let bar: any = 5;':
+    labels:
+    - source: any
+      style: primary
+      start: 9
+      end: 12

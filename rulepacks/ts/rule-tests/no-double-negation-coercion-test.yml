@@ -5,3 +5,5 @@ valid:
 invalid:
   - const isAuthenticated = !!session?.user;
   - const hasBaseUrl = !!data.baseUrl;
+  - if (!!value) {}
+  - return !!user;

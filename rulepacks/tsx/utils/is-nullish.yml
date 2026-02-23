@@ -1,0 +1,6 @@
+id: is-nullish
+language: Tsx
+rule:
+  any:
+    - kind: "null"
+    - kind: undefined

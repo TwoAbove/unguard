@@ -1,0 +1,11 @@
+id: no-explicit-any-annotation
+language: TypeScript
+severity: warning
+message: Explicit any in type position disables type checking; use a precise type or unknown
+rule:
+  kind: predefined_type
+  regex: ^any$
+  not:
+    inside:
+      kind: as_expression
+      stopBy: end

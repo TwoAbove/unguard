@@ -3,8 +3,16 @@ language: TypeScript
 severity: warning
 message: Nullish ternary normalization can hide boundary contracts; enforce shape earlier
 rule:
-  any:
-    - pattern: '$VALUE === null ? null : $EXPR'
-    - pattern: '$VALUE !== null ? $EXPR : null'
-    - pattern: '$VALUE === undefined ? undefined : $EXPR'
-    - pattern: '$VALUE !== undefined ? $EXPR : undefined'
+  all:
+    - kind: ternary_expression
+    - has:
+        field: condition
+        kind: binary_expression
+        regex: (===|!==|==|!=).*(null|undefined)|(null|undefined).*(===|!==|==|!=)
+    - any:
+        - has:
+            field: consequence
+            matches: is-nullish
+        - has:
+            field: alternative
+            matches: is-nullish

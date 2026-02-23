@@ -1,0 +1,5 @@
+id: no-optional-element-access
+valid:
+  - const label = config["label"];
+invalid:
+  - const label = config?.["label"];

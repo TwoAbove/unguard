@@ -1,0 +1,14 @@
+id: no-non-null-assertion
+snapshots:
+  const id = getId()!;:
+    labels:
+    - source: getId()!
+      style: primary
+      start: 11
+      end: 19
+  const name = user!.name;:
+    labels:
+    - source: user!
+      style: primary
+      start: 13
+      end: 18

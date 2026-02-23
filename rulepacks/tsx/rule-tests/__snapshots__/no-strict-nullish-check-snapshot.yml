@@ -6,11 +6,27 @@ snapshots:
       style: primary
       start: 4
       end: 18
+    - source: '!=='
+      style: secondary
+      start: 10
+      end: 13
+    - source: 'null'
+      style: secondary
+      start: 14
+      end: 18
   if (value !== undefined) useValue(value);:
     labels:
     - source: value !== undefined
       style: primary
       start: 4
+      end: 23
+    - source: '!=='
+      style: secondary
+      start: 10
+      end: 13
+    - source: undefined
+      style: secondary
+      start: 14
       end: 23
   if (value === null) handleMissing();:
     labels:
@@ -18,9 +34,25 @@ snapshots:
       style: primary
       start: 4
       end: 18
+    - source: ===
+      style: secondary
+      start: 10
+      end: 13
+    - source: 'null'
+      style: secondary
+      start: 14
+      end: 18
   if (value === undefined) handleMissing();:
     labels:
     - source: value === undefined
       style: primary
       start: 4
+      end: 23
+    - source: ===
+      style: secondary
+      start: 10
+      end: 13
+    - source: undefined
+      style: secondary
+      start: 14
       end: 23

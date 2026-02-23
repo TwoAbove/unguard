@@ -1,0 +1,6 @@
+id: is-nullish
+language: TypeScript
+rule:
+  any:
+    - kind: "null"
+    - kind: undefined

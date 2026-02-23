@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import crossSpawn from "cross-spawn";
 
 const binDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(binDir, "..");
 const localBinDir = path.join(packageRoot, "node_modules", ".bin");
-const astGrepBinary = process.platform === "win32" ? "ast-grep.cmd" : "ast-grep";
 
 const rulepacks = [
   {
@@ -24,24 +23,25 @@ const rawArgs = process.argv.slice(2);
 const firstArg = rawArgs[0];
 
 if (firstArg === "-h" || firstArg === "--help") {
-  console.log(
-    "unguard: data-shape AST checker\n\nUsage:\n  unguard scan [paths...] [ast-grep scan options]\n  unguard scan [paths...] --strict\n  unguard [paths...] [ast-grep scan options]\n\nNotes:\n  - Runs both language rulepacks: TypeScript and TSX\n\nExamples:\n  unguard scan src\n  unguard scan src --filter no-loose-nullish-check\n  unguard scan src --strict\n  unguard src --strict\n",
-  );
+  console.log(`unguard: data-shape AST checker
+
+Usage:
+  unguard scan [paths...] [ast-grep scan options]
+  unguard scan [paths...] --strict
+  unguard [paths...] [ast-grep scan options]
+
+Examples:
+  unguard scan src
+  unguard scan src --filter no-loose-nullish-check
+  unguard scan src --strict
+  unguard src --strict
+`);
   process.exit(0);
 }
 
-const isScanCommand = firstArg === "scan";
-const userArgs = isScanCommand ? rawArgs.slice(1) : rawArgs;
-
-const forwardedArgs = [];
-let strictMode = false;
-for (const arg of userArgs) {
-  if (arg === "--strict") {
-    strictMode = true;
-    continue;
-  }
-  forwardedArgs.push(arg);
-}
+const userArgs = firstArg === "scan" ? rawArgs.slice(1) : rawArgs;
+const strictMode = userArgs.includes("--strict");
+const forwardedArgs = userArgs.filter((a) => a !== "--strict");
 
 const envPath = process.env.PATH
   ? `${localBinDir}${path.delimiter}${process.env.PATH}`
@@ -57,12 +57,9 @@ for (const rulepack of rulepacks) {
     scanArgs.push("--error");
   }
 
-  const result = spawnSync(astGrepBinary, scanArgs, {
+  const result = crossSpawn.sync("ast-grep", scanArgs, {
     stdio: "inherit",
-    env: {
-      ...process.env,
-      PATH: envPath,
-    },
+    env: { ...process.env, PATH: envPath },
   });
 
   if (result.error) {

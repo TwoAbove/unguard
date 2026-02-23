@@ -1,0 +1,100 @@
+id: no-logical-or-fallback
+snapshots:
+  const context = contextStorage.getStore() || {};:
+    labels:
+    - source: contextStorage.getStore() || {}
+      style: primary
+      start: 16
+      end: 47
+    - source: '||'
+      style: secondary
+      start: 42
+      end: 44
+    - source: '{}'
+      style: secondary
+      start: 45
+      end: 47
+  const count = Number(menu.itemCount) || 0;:
+    labels:
+    - source: Number(menu.itemCount) || 0
+      style: primary
+      start: 14
+      end: 41
+    - source: '||'
+      style: secondary
+      start: 37
+      end: 39
+    - source: '0'
+      style: secondary
+      start: 40
+      end: 41
+  const enabled = featureFlag || false;:
+    labels:
+    - source: featureFlag || false
+      style: primary
+      start: 16
+      end: 36
+    - source: '||'
+      style: secondary
+      start: 28
+      end: 30
+    - source: 'false'
+      style: secondary
+      start: 31
+      end: 36
+  const items = menuData?.items || [];:
+    labels:
+    - source: menuData?.items || []
+      style: primary
+      start: 14
+      end: 35
+    - source: '||'
+      style: secondary
+      start: 30
+      end: 32
+    - source: '[]'
+      style: secondary
+      start: 33
+      end: 35
+  const url = process.env.DATABASE_URL || "";:
+    labels:
+    - source: process.env.DATABASE_URL || ""
+      style: primary
+      start: 12
+      end: 42
+    - source: '||'
+      style: secondary
+      start: 37
+      end: 39
+    - source: '""'
+      style: secondary
+      start: 40
+      end: 42
+  return getValue() || undefined;:
+    labels:
+    - source: getValue() || undefined
+      style: primary
+      start: 7
+      end: 30
+    - source: '||'
+      style: secondary
+      start: 18
+      end: 20
+    - source: undefined
+      style: secondary
+      start: 21
+      end: 30
+  return titleSection.content.trim() || null;:
+    labels:
+    - source: titleSection.content.trim() || null
+      style: primary
+      start: 7
+      end: 42
+    - source: '||'
+      style: secondary
+      start: 35
+      end: 37
+    - source: 'null'
+      style: secondary
+      start: 38
+      end: 42

@@ -1,0 +1,14 @@
+id: prefer-default-param-value
+snapshots:
+  'function foo(name?: string) { const n = name ?? ''d''; return n; }':
+    labels:
+    - source: 'function foo(name?: string) { const n = name ?? ''d''; return n; }'
+      style: primary
+      start: 0
+      end: 64
+  'function foo(name?: string) { name = name || ''d''; return name; }':
+    labels:
+    - source: 'function foo(name?: string) { name = name || ''d''; return name; }'
+      style: primary
+      start: 0
+      end: 64

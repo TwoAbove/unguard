@@ -1,0 +1,8 @@
+id: no-ts-ignore
+language: Tsx
+severity: warning
+message: Type suppression hides shape errors; fix the type instead of silencing
+  the checker
+rule:
+  kind: comment
+  regex: "@ts-(ignore|expect-error)"

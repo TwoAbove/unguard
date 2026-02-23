@@ -1,0 +1,9 @@
+id: no-inline-type-in-params
+valid:
+  - "function foo(arg: FooArg) {}"
+  - "const bar = (x: string, y: number) => x;"
+  - "function baz(arg: Array<string>) {}"
+invalid:
+  - "function foo(arg: { name: string; age: number }) {}"
+  - "const bar = (x: { id: number }) => x;"
+  - "function qux(arg?: { id: number }) {}"
