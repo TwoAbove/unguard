@@ -1,8 +1,0 @@
-id: no-implicit-falsy-check
-language: Tsx
-severity: warning
-message: Falsy guard may hide data-shape issues; use explicit boundary guarantees
-rule:
-  any:
-    - pattern: if (!$VALUE) { $$$BODY }
-    - pattern: if (!$VALUE) $STMT

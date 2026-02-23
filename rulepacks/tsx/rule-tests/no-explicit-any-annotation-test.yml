@@ -1,9 +1,0 @@
-id: no-explicit-any-annotation
-valid:
-  - "function foo(x: unknown) {}"
-  - "let bar: string = '';"
-  - const baz = value as any;
-invalid:
-  - "function foo(x: any) {}"
-  - "let bar: any = 5;"
-  - "const baz: Promise<any> = fetch();"

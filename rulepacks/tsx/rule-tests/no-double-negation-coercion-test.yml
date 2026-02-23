@@ -1,9 +1,0 @@
-id: no-double-negation-coercion
-valid:
-  - const isAuthenticated = Boolean(session.user);
-  - const hasBaseUrl = data.baseUrl !== undefined;
-invalid:
-  - const isAuthenticated = !!session?.user;
-  - const hasBaseUrl = !!data.baseUrl;
-  - if (!!value) {}
-  - return !!user;

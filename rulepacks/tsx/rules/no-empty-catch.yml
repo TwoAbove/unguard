@@ -1,8 +1,0 @@
-id: no-empty-catch
-language: Tsx
-severity: warning
-message: Empty catch blocks hide failures; handle, annotate, or rethrow explicitly
-rule:
-  any:
-    - pattern: try { $$$TRY } catch ($ERR) {}
-    - pattern: try { $$$TRY } catch {}

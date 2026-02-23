@@ -1,7 +1,0 @@
-id: no-optional-call
-valid:
-  - callback(value);
-  - obj.method(arg);
-invalid:
-  - maybeCallback?.(value);
-  - obj.method?.(arg);

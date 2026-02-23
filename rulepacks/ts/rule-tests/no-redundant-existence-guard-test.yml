@@ -1,7 +1,0 @@
-id: no-redundant-existence-guard
-valid:
-  - if (session) return session.id;
-  - if (session && hasPermission(session)) return session.id;
-invalid:
-  - if (session && session.id) return session.id;
-  - if (user && user["profile"]) return user.profile.name;

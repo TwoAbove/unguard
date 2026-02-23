@@ -1,6 +1,0 @@
-id: no-optional-call
-language: TypeScript
-severity: warning
-message: Optional call means the function may not exist; that indicates a missing shape guarantee
-rule:
-  pattern: $CALL?.($$$ARGS)

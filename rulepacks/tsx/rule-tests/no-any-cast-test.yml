@@ -1,7 +1,0 @@
-id: no-any-cast
-valid:
-  - const value = input as string;
-  - const payload = data satisfies Record<string, unknown>;
-invalid:
-  - const value = input as any;
-  - const id = (result as any).id;

@@ -1,8 +1,0 @@
-id: no-optional-element-access
-snapshots:
-  const label = config?.["label"];:
-    labels:
-    - source: config?.["label"]
-      style: primary
-      start: 14
-      end: 31

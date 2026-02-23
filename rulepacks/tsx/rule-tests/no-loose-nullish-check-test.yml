@@ -1,8 +1,0 @@
-id: no-loose-nullish-check
-valid:
-  - if (value === null) handleMissing();
-  - if (value === undefined) handleMissing();
-  - if (value !== null) useValue(value);
-invalid:
-  - if (value == null) handleMissing();
-  - return payload != null;

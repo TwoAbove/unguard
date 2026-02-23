@@ -1,6 +1,0 @@
-id: no-non-null-assertion
-language: TypeScript
-severity: warning
-message: Non-null assertion bypasses type safety; prove the value exists at the boundary
-rule:
-  kind: non_null_expression

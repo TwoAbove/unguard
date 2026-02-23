@@ -1,6 +1,0 @@
-id: no-double-negation-coercion
-language: TypeScript
-severity: warning
-message: Double-negation coercion can hide shape assumptions; prefer explicit boundary guarantees
-rule:
-  pattern: "!!$VALUE"

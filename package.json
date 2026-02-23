@@ -1,7 +1,7 @@
 {
   "name": "unguard",
-  "version": "0.2.0",
-  "description": "Prove data-shape guarantees with ast-grep rule packs",
+  "version": "0.4.0",
+  "description": "Unslop",
   "author": "TwoAbove",
   "license": "MIT",
   "repository": {
@@ -16,30 +16,39 @@
   "bin": {
     "unguard": "./bin/unguard.mjs"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "bin",
-    "rulepacks"
+    "dist"
   ],
   "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "scan": "node ./bin/unguard.mjs scan .",
     "scan:strict": "node ./bin/unguard.mjs scan . --strict",
-    "generate:tsx": "node scripts/generate-tsx-rulepack.mjs",
-    "test:rules:typescript": "ast-grep test -c rulepacks/ts/sgconfig.yml",
-    "test:rules:tsx": "npm run generate:tsx && ast-grep test -c rulepacks/tsx/sgconfig.yml",
-    "test:rules": "npm run test:rules:typescript && npm run test:rules:tsx",
-    "test:rules:typescript:update": "ast-grep test -c rulepacks/ts/sgconfig.yml -U",
-    "test:rules:tsx:update": "npm run generate:tsx && ast-grep test -c rulepacks/tsx/sgconfig.yml -U",
-    "test:rules:update": "npm run test:rules:typescript:update && npm run test:rules:tsx:update",
-    "prepublishOnly": "npm run generate:tsx && npm run test:rules"
-  },
-  "dependencies": {
-    "@ast-grep/cli": "^0.39.4",
-    "cross-spawn": "^7.0.6"
+    "prepublishOnly": "npm run build && npm run test"
   },
   "engines": {
     "node": ">=18"
   },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "oxc-parser": "^0.114.0",
+    "oxc-walker": "^0.7.0",
+    "picocolors": "^1.1.1"
+  },
   "devDependencies": {
-    "yaml": "^2.8.2"
+    "@oxc-project/types": "^0.114.0",
+    "@types/node": "^25.3.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

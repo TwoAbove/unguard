@@ -1,7 +1,0 @@
-id: prefer-required-param-with-guard
-valid:
-  - "function foo(name?: string) { console.log(name); if (!name) return; }"
-  - "function foo(name: string) { return name; }"
-invalid:
-  - "function foo(name?: string) { if (!name) return 'anon'; return name; }"
-  - "function foo(opts?: Options) { if (opts === undefined) throw new Error('x'); return opts; }"
