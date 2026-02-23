@@ -1,3 +1,4 @@
+import { relative } from "node:path";
 import pc from "picocolors";
 import { scan } from "./engine.ts";
 import type { Diagnostic } from "./rules/types.ts";
@@ -28,9 +29,7 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   printDiagnostics(result.diagnostics);
-  console.log(
-    `\n${pc.bold(String(result.diagnostics.length))} issue${result.diagnostics.length === 1 ? "" : "s"} in ${result.fileCount} files.`,
-  );
+  printSummary(result.diagnostics, result.fileCount);
 
   return result.diagnostics.some((d) => d.severity === "error") ? 1 : 0;
 }
@@ -72,11 +71,42 @@ function printDiagnostics(diagnostics: Diagnostic[]) {
     list.push(d);
   }
 
+  const cwd = process.cwd() + "/";
+  const cwdBase = process.cwd();
+
   for (const [file, diags] of byFile) {
+    const rel = relative(cwdBase, file);
+    console.log(pc.underline(rel));
+
     for (const d of diags) {
+      const loc = `${d.line}:${d.column}`;
       const sev = d.severity === "error" ? pc.red("error") : pc.yellow("warning");
-      const annotation = d.annotation !== undefined ? ` ${pc.cyan(`(${d.annotation})`)}` : "";
-      console.log(`${pc.dim(file)}:${d.line}:${d.column} ${sev} ${d.message} ${pc.dim(`[${d.ruleId}]`)}${annotation}`);
+      const msg = d.message.replaceAll(cwd, "");
+      const rule = pc.dim(d.ruleId);
+      const annotation = d.annotation !== undefined ? `  ${pc.cyan(d.annotation)}` : "";
+      console.log(`  ${pc.dim(loc.padEnd(10))} ${sev}  ${msg}  ${rule}${annotation}`);
     }
+
+    console.log();
   }
+}
+
+function printSummary(diagnostics: Diagnostic[], fileCount: number) {
+  const counts = new Map<string, number>();
+  for (const d of diagnostics) {
+    const prev = counts.get(d.ruleId);
+    counts.set(d.ruleId, (prev === undefined ? 0 : prev) + 1);
+  }
+
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const maxRule = Math.max(...sorted.map(([r]) => r.length));
+
+  console.log(pc.bold("Summary"));
+  for (const [rule, count] of sorted) {
+    console.log(`  ${rule.padEnd(maxRule)}  ${pc.bold(String(count))}`);
+  }
+
+  console.log(
+    `\n${pc.bold(String(diagnostics.length))} issue${diagnostics.length === 1 ? "" : "s"} in ${fileCount} files.`,
+  );
 }

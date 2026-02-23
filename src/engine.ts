@@ -31,7 +31,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   });
 
   const files = await fg(globs, {
-    ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
+    ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/*.d.ts", "**/*.d.cts", "**/*.d.mts"],
     absolute: true,
   });
 
@@ -66,13 +66,22 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     }
   }
 
+  const seen = new Set<string>();
+  const deduped: Diagnostic[] = [];
+  for (const d of diagnostics) {
+    const key = `${d.file}:${d.line}:${d.ruleId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(d);
+  }
+
   if (options.strict) {
-    for (const d of diagnostics) {
+    for (const d of deduped) {
       d.severity = "error";
     }
   }
 
-  return { diagnostics, fileCount: files.length };
+  return { diagnostics: deduped, fileCount: files.length };
 }
 
 function runSingleFileRules(
