@@ -11,7 +11,7 @@ const astGrepBinary = process.platform === "win32" ? "ast-grep.cmd" : "ast-grep"
 
 const rulepacks = [
   {
-    configPath: path.join(packageRoot, "rulepacks", "typescript", "sgconfig.yml"),
+    configPath: path.join(packageRoot, "rulepacks", "ts", "sgconfig.yml"),
     globs: ["**/*.ts", "**/*.cts", "**/*.mts"],
   },
   {

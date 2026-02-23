@@ -20,10 +20,10 @@
   "scripts": {
     "scan": "node ./bin/unguard.mjs scan .",
     "scan:strict": "node ./bin/unguard.mjs scan . --strict",
-    "test:rules:typescript": "ast-grep test -c rulepacks/typescript/sgconfig.yml",
+    "test:rules:typescript": "ast-grep test -c rulepacks/ts/sgconfig.yml",
     "test:rules:tsx": "ast-grep test -c rulepacks/tsx/sgconfig.yml",
     "test:rules": "npm run test:rules:typescript && npm run test:rules:tsx",
-    "test:rules:typescript:update": "ast-grep test -c rulepacks/typescript/sgconfig.yml -U",
+    "test:rules:typescript:update": "ast-grep test -c rulepacks/ts/sgconfig.yml -U",
     "test:rules:tsx:update": "ast-grep test -c rulepacks/tsx/sgconfig.yml -U",
     "test:rules:update": "npm run test:rules:typescript:update && npm run test:rules:tsx:update",
     "prepublishOnly": "npm run test:rules"
