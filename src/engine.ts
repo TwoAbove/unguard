@@ -22,7 +22,8 @@ export interface ScanResult {
 export async function scan(options: ScanOptions): Promise<ScanResult> {
   const patterns = options.paths.length > 0 ? options.paths : ["."];
   const globs = patterns.map((p) => {
-    if (p.endsWith("/") || p === ".") return `${p}**/*.{ts,cts,mts,tsx}`;
+    if (p === ".") return `./**/*.{ts,cts,mts,tsx}`;
+    if (p.endsWith("/")) return `${p}**/*.{ts,cts,mts,tsx}`;
     if (!p.includes("*") && !p.endsWith(".ts") && !p.endsWith(".tsx") && !p.endsWith(".cts") && !p.endsWith(".mts")) {
       return `${p}/**/*.{ts,cts,mts,tsx}`;
     }
