@@ -12,6 +12,13 @@
   "bugs": {
     "url": "https://github.com/TwoAbove/unguard/issues"
   },
+  "keywords": [
+    "typescript",
+    "linter",
+    "static-analysis",
+    "code-quality",
+    "type-safety"
+  ],
   "type": "module",
   "bin": {
     "unguard": "./bin/unguard.mjs"
