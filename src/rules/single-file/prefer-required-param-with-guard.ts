@@ -4,7 +4,7 @@ import { prop, child, children } from "../../utils/narrow.ts";
 
 export const preferRequiredParamWithGuard: SingleFileRule = {
   id: "prefer-required-param-with-guard",
-  severity: "warning",
+  severity: "info",
   message: "Optional param with immediate guard (if (!param) return/throw); make it required instead",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {

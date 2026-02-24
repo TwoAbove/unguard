@@ -4,7 +4,7 @@ import { prop, child } from "../../utils/narrow.ts";
 
 export const noDoubleNegationCoercion: SingleFileRule = {
   id: "no-double-negation-coercion",
-  severity: "warning",
+  severity: "info",
   message: "!! coercion hides data-shape intent; use an explicit boolean comparison",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {

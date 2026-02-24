@@ -4,7 +4,7 @@ import { child } from "../../utils/narrow.ts";
 
 export const noTypeAssertion: SingleFileRule = {
   id: "no-type-assertion",
-  severity: "warning",
+  severity: "error",
   message: "Double type assertion (`as unknown as T`) circumvents the type system; fix the upstream type or use a type guard",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {

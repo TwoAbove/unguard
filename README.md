@@ -30,59 +30,59 @@ Add `unguard` to your lint check.
 
 ### Type system evasion
 
-| Rule | What it catches |
-|------|----------------|
-| `no-any-cast` | `x as any` |
-| `no-explicit-any-annotation` | `param: any`, `const x: any` |
-| `no-type-assertion` | `x as unknown as T` |
-| `no-ts-ignore` | `@ts-ignore` / `@ts-expect-error` |
+| Rule | Severity | What it catches |
+| ---- | -------- | --------------- |
+| `no-any-cast` | error | `x as any` |
+| `no-explicit-any-annotation` | warning | `param: any`, `const x: any` |
+| `no-type-assertion` | error | `x as unknown as T` |
+| `no-ts-ignore` | error | `@ts-ignore` / `@ts-expect-error` |
 
 ### Defensive code
 
-| Rule | What it catches |
-|------|----------------|
-| `no-optional-property-access` | `obj?.prop` |
-| `no-optional-element-access` | `obj?.[key]` |
-| `no-optional-call` | `fn?.()` |
-| `no-nullish-coalescing` | `x ?? fallback` |
-| `no-logical-or-fallback` | `x \|\| fallback` |
-| `no-null-ternary-normalization` | `x == null ? fallback : x` |
-| `no-non-null-assertion` | `x!` |
-| `no-double-negation-coercion` | `!!value` |
-| `no-redundant-existence-guard` | `obj && obj.prop` |
+| Rule | Severity | What it catches |
+| ---- | -------- | --------------- |
+| `no-optional-property-access` | warning | `obj?.prop` |
+| `no-optional-element-access` | warning | `obj?.[key]` |
+| `no-optional-call` | warning | `fn?.()` |
+| `no-nullish-coalescing` | warning | `x ?? fallback` |
+| `no-logical-or-fallback` | warning | `x \|\| fallback` |
+| `no-null-ternary-normalization` | warning | `x == null ? fallback : x` |
+| `no-non-null-assertion` | warning | `x!` |
+| `no-double-negation-coercion` | info | `!!value` |
+| `no-redundant-existence-guard` | warning | `obj && obj.prop` |
 
 ### Error handling
 
-| Rule | What it catches |
-|------|----------------|
-| `no-empty-catch` | `catch {}` with no body |
-| `no-catch-return` | `catch { return fallback }` without rethrowing |
-| `no-error-rewrap` | `throw new Error(e.message)` without `{ cause: e }` |
+| Rule | Severity | What it catches |
+| ---- | -------- | --------------- |
+| `no-empty-catch` | error | `catch {}` with no body |
+| `no-catch-return` | warning | `catch { return fallback }` without rethrowing |
+| `no-error-rewrap` | error | `throw new Error(e.message)` without `{ cause: e }` |
 
 ### Interface design
 
-| Rule | What it catches |
-|------|----------------|
-| `no-inline-type-in-params` | `fn(opts: { a: string; b: number })` |
-| `prefer-default-param-value` | Optional param reassigned with `??` in the body |
-| `prefer-required-param-with-guard` | `arg?: T` followed by `if (!arg) throw` |
+| Rule | Severity | What it catches |
+| ---- | -------- | --------------- |
+| `no-inline-type-in-params` | warning | `fn(opts: { a: string; b: number })` |
+| `prefer-default-param-value` | info | Optional param reassigned with `??` in the body |
+| `prefer-required-param-with-guard` | info | `arg?: T` followed by `if (!arg) throw` |
 
 ### Cross-file analysis
 
-| Rule | What it catches |
-|------|----------------|
-| `duplicate-type-declaration` | Same type shape in multiple files |
-| `duplicate-type-name` | Same exported type name, different shapes |
-| `duplicate-function-declaration` | Same function body in multiple files |
-| `duplicate-function-name` | Same exported function name, different bodies |
-| `optional-arg-always-used` | Optional param provided at every call site |
-| `explicit-null-arg` | `fn(null)` / `fn(undefined)` to project functions |
+| Rule | Severity | What it catches |
+| ---- | -------- | --------------- |
+| `duplicate-type-declaration` | warning | Same type shape in multiple files |
+| `duplicate-type-name` | warning | Same exported type name, different shapes |
+| `duplicate-function-declaration` | warning | Same function body in multiple files |
+| `duplicate-function-name` | warning | Same exported function name, different bodies |
+| `optional-arg-always-used` | warning | Optional param provided at every call site |
+| `explicit-null-arg` | warning | `fn(null)` / `fn(undefined)` to project functions |
 
 ### Imports
 
-| Rule | What it catches |
-|------|----------------|
-| `no-dynamic-import` | `import("./module")` |
+| Rule | Severity | What it catches |
+| ---- | -------- | --------------- |
+| `no-dynamic-import` | error | `import("./module")` |
 
 ## Annotations
 

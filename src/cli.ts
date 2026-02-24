@@ -31,7 +31,10 @@ export async function main(argv: string[]): Promise<number> {
   printDiagnostics(result.diagnostics);
   printSummary(result.diagnostics, result.fileCount);
 
-  return result.diagnostics.some((d) => d.severity === "error") ? 1 : 0;
+  const filesWithErrors = new Set(
+    result.diagnostics.filter((d) => d.severity === "error").map((d) => d.file),
+  ).size;
+  return filesWithErrors;
 }
 
 function printHelp() {
@@ -80,7 +83,7 @@ function printDiagnostics(diagnostics: Diagnostic[]) {
 
     for (const d of diags) {
       const loc = `${d.line}:${d.column}`;
-      const sev = d.severity === "error" ? pc.red("error") : pc.yellow("warning");
+      const sev = d.severity === "error" ? pc.red("error") : d.severity === "warning" ? pc.yellow("warning") : pc.blue("info");
       const msg = d.message.replaceAll(cwd, "");
       const rule = pc.dim(d.ruleId);
       const annotation = d.annotation !== undefined ? `  ${pc.cyan(d.annotation)}` : "";

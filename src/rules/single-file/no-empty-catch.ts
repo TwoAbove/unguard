@@ -4,7 +4,7 @@ import { child, children } from "../../utils/narrow.ts";
 
 export const noEmptyCatch: SingleFileRule = {
   id: "no-empty-catch",
-  severity: "warning",
+  severity: "error",
   message: "Empty catch blocks hide failures; handle, annotate, or rethrow explicitly",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {

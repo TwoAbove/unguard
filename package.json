@@ -1,6 +1,6 @@
 {
   "name": "unguard",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Detect overdefensive AI-generated code",
   "author": "Seva Maltsev <me@seva.dev> (https://seva.dev)",
   "license": "MIT",

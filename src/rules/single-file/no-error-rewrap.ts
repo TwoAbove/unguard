@@ -4,7 +4,7 @@ import { prop, child, children } from "../../utils/narrow.ts";
 
 export const noErrorRewrap: SingleFileRule = {
   id: "no-error-rewrap",
-  severity: "warning",
+  severity: "error",
   message:
     "Re-wrapped error loses the original stack trace and type; use { cause: originalError } to preserve the error chain",
 

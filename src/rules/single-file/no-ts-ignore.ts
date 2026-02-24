@@ -3,7 +3,7 @@ import type { SingleFileRule, VisitContext } from "../types.ts";
 
 export const noTsIgnore: SingleFileRule = {
   id: "no-ts-ignore",
-  severity: "warning",
+  severity: "error",
   message: "@ts-ignore / @ts-expect-error suppresses type checking; fix the underlying type issue",
 
   visit(_node: Node, _parent: Node | null, _ctx: VisitContext) {},

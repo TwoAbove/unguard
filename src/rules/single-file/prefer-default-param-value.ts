@@ -4,7 +4,7 @@ import { prop, child, children } from "../../utils/narrow.ts";
 
 export const preferDefaultParamValue: SingleFileRule = {
   id: "prefer-default-param-value",
-  severity: "warning",
+  severity: "info",
   message: "Use a default parameter value instead of reassigning from nullish coalescing inside the body",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {

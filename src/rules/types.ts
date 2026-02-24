@@ -2,7 +2,7 @@ import type { Node, Comment } from "oxc-parser";
 
 export interface Diagnostic {
   ruleId: string;
-  severity: "warning" | "error";
+  severity: "info" | "warning" | "error";
   message: string;
   file: string;
   line: number;
@@ -23,7 +23,7 @@ export interface VisitContext {
 
 export interface SingleFileRule {
   id: string;
-  severity: "warning" | "error";
+  severity: "info" | "warning" | "error";
   message: string;
   visit(node: Node, parent: Node | null, ctx: VisitContext): void;
   visitComment?(comment: Comment, ctx: VisitContext): void;
@@ -34,7 +34,7 @@ export type { ProjectIndex };
 
 export interface CrossFileRule {
   id: string;
-  severity: "warning" | "error";
+  severity: "info" | "warning" | "error";
   message: string;
   analyze(project: ProjectIndex): Diagnostic[];
 }
