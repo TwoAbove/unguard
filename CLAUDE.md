@@ -18,9 +18,9 @@ CLI usage: `node bin/unguard.mjs scan [paths] [--strict] [--filter <rule-id>]`
 
 **Parser:** `oxc-parser` (ESTree AST). **Walker:** `oxc-walker` (traversal with parent tracking).
 
-**Two-pass design** (pass 2 not yet implemented):
+**Two-pass design**:
 - Pass 1: Parse files, walk ASTs, run single-file visitor rules. (Future: also build project-wide indices for cross-file analysis.)
-- Pass 2: Run cross-file rules against collected indices. (Not yet built — see `docs/plans/`.)
+- Pass 2: Run cross-file rules against collected indices.
 
 Entry points:
 - `src/engine.ts` — `scan()` orchestrates file discovery, parsing, rule execution
@@ -117,13 +117,8 @@ describe("my-rule", () => {
 });
 ```
 
-## Project status
-
-Tasks 1-7 complete. Tasks 8-15 remain (cross-file analysis, old infrastructure cleanup, real-project validation). See `docs/plans/2026-02-23-oxc-rewrite-plan.md` for the full plan. The `rulepacks/` and `scripts/` directories contain the old ast-grep YAML infrastructure that will be deleted once cross-file rules are done.
-
 ## Constraints
 
 - ESM only. No CJS.
-- No `as any` in `src/` outside of `src/utils/narrow.ts`.
+- Dogfood unguard on unguard.
 - Test every rule with both valid and invalid fixtures.
-- Do not copy code from test target repos (`termui`, `picbot`, `suppose`) — only scan them.

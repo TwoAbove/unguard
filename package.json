@@ -1,8 +1,8 @@
 {
   "name": "unguard",
   "version": "0.4.4",
-  "description": "Unslop",
-  "author": "TwoAbove",
+  "description": "Detect overdefensive AI-generated code",
+  "author": "Seva Maltsev <me@seva.dev> (https://seva.dev)",
   "license": "MIT",
   "repository": {
     "type": "git",

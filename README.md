@@ -1,8 +1,8 @@
 # unguard
 
-Unguard your code. Defend agains overdefensive AI-generated code.
+Unguard your code. Defend against overdefensive AI-generated code.
 
-Built on [oxc-parser](https://github.com/nicolo-ribaudo/oxc-parser-js).
+Built on [oxc-parser](https://oxc.rs).
 
 ## Install
 
