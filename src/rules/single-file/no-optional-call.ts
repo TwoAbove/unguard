@@ -4,7 +4,7 @@ import { prop } from "../../utils/narrow.ts";
 
 export const noOptionalCall: SingleFileRule = {
   id: "no-optional-call",
-  severity: "warning",
+  severity: "info",
   message: "Optional call (?.) assumes the function could be undefined; if the type guarantees it exists, call directly; if not, fix the type upstream",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {
