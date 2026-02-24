@@ -84,7 +84,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   return { diagnostics: deduped, fileCount: files.length };
 }
 
-function runSingleFileRules(
+export function runSingleFileRules(
   rules: SingleFileRule[],
   program: Node,
   comments: Comment[],
@@ -96,6 +96,7 @@ function runSingleFileRules(
   const makeCtx = (rule: SingleFileRule): VisitContext => ({
     filename,
     source,
+    comments,
     report(span: Span, message?: string) {
       const pos = lineCol(source, span.start);
       diagnostics.push({

@@ -6,7 +6,7 @@ import { isNullish } from "../../utils/ast.ts";
 export const noNullTernaryNormalization: SingleFileRule = {
   id: "no-null-ternary-normalization",
   severity: "warning",
-  message: "Ternary null-normalization (x == null ? fallback : x) implies the value could be nullish; prove the shape",
+  message: "Ternary null-normalization (x == null ? fallback : x); if the type guarantees non-null, remove the ternary; if not, fix the type upstream",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {
     if (node.type !== "ConditionalExpression") return;

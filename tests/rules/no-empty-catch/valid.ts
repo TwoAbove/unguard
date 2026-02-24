@@ -10,3 +10,13 @@ try {
   // intentionally ignored
   void err;
 }
+
+try {
+  riskyOperation();
+} catch {
+  // Malformed input — fall through
+}
+
+try {
+  riskyOperation();
+} catch { /* best-effort, ok to fail */ }

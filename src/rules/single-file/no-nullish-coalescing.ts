@@ -5,7 +5,7 @@ import { prop } from "../../utils/narrow.ts";
 export const noNullishCoalescing: SingleFileRule = {
   id: "no-nullish-coalescing",
   severity: "warning",
-  message: "Nullish coalescing (??) implies the value could be null/undefined; prove the shape instead",
+  message: "Nullish coalescing (??) masks a possibly-nullable type; if the type guarantees non-null, remove the fallback; if not, fix the type upstream",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {
     if (node.type !== "LogicalExpression") return;

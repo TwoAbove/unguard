@@ -3,7 +3,7 @@ import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 export const duplicateTypeDeclaration: CrossFileRule = {
   id: "duplicate-type-declaration",
   severity: "warning",
-  message: "Identical type shape declared in multiple files; extract to a shared module",
+  message: "Identical type shape declared in multiple files; consolidate to a single definition",
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];

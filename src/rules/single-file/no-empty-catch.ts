@@ -11,6 +11,8 @@ export const noEmptyCatch: SingleFileRule = {
     if (node.type !== "CatchClause") return;
     const body = child(node, "body");
     if (body && body.type === "BlockStatement" && children(body, "body").length === 0) {
+      const hasComment = ctx.comments.some((c) => c.start >= body.start && c.end <= body.end);
+      if (hasComment) return;
       ctx.report(node);
     }
   },

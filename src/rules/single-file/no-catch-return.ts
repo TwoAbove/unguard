@@ -6,7 +6,7 @@ export const noCatchReturn: SingleFileRule = {
   id: "no-catch-return",
   severity: "warning",
   message:
-    "Catch block returns a value instead of throwing; this converts errors into fallback data that callers must defensively handle",
+    "Catch block returns a fallback value, forcing callers to handle two data shapes; rethrow or let the error propagate",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {
     if (node.type !== "CatchClause") return;

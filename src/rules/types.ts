@@ -19,6 +19,7 @@ export interface VisitContext {
   report(span: Span, message?: string): void;
   filename: string;
   source: string;
+  comments: Comment[];
 }
 
 export interface SingleFileRule {

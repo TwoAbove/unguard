@@ -1,60 +1,15 @@
-import { parseSync, type Comment } from "oxc-parser";
-import { walk } from "oxc-walker";
+import { parseSync } from "oxc-parser";
 import { readFileSync } from "node:fs";
 import fg from "fast-glob";
 import { expect } from "vitest";
-import type { SingleFileRule, CrossFileRule, Diagnostic, Span } from "../src/rules/types.ts";
-import type { Node } from "oxc-parser";
+import type { SingleFileRule, CrossFileRule, Diagnostic } from "../src/rules/types.ts";
+import { runSingleFileRules } from "../src/engine.ts";
 import { collectProject } from "../src/collect/index.ts";
 
 /** Run a single-file rule against source code, return diagnostics. */
 export function runRule(rule: SingleFileRule, source: string, filename = "test.ts"): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
   const result = parseSync(filename, source);
-
-  const ctx = {
-    filename,
-    source,
-    report(span: Span, message?: string) {
-      const pos = lineCol(source, span.start);
-      diagnostics.push({
-        ruleId: rule.id,
-        severity: rule.severity,
-        message: message ?? rule.message,
-        file: filename,
-        ...pos,
-      });
-    },
-  };
-
-  walk(result.program, {
-    enter(node: Node, parent: Node | null) {
-      rule.visit(node, parent, ctx);
-    },
-  });
-
-  if (rule.visitComment) {
-    for (const comment of result.comments) {
-      rule.visitComment(comment, ctx);
-    }
-  }
-
-  return diagnostics;
-}
-
-/** Convert byte offset to line/column (1-based). */
-function lineCol(source: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let col = 1;
-  for (let i = 0; i < offset && i < source.length; i++) {
-    if (source[i] === "\n") {
-      line++;
-      col = 1;
-    } else {
-      col++;
-    }
-  }
-  return { line, column: col };
+  return runSingleFileRules([rule], result.program, result.comments, source, filename);
 }
 
 /** Parse `// @expect <rule-id>` annotations from source. Returns set of 1-based line numbers. */
@@ -117,7 +72,6 @@ export function assertCrossFileInvalid(rule: CrossFileRule, fixtureDir: string):
   const files = collectFixtureFiles(fixtureDir);
   const diagnostics = runCrossFileRule(rule, fixtureDir);
 
-  // Collect all @expect annotations across all files
   const expectedByFile = new Map<string, Set<number>>();
   for (const file of files) {
     const source = readFileSync(file, "utf8");

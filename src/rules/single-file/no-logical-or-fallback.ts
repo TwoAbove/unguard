@@ -6,7 +6,7 @@ import { isLiteral } from "../../utils/ast.ts";
 export const noLogicalOrFallback: SingleFileRule = {
   id: "no-logical-or-fallback",
   severity: "warning",
-  message: "|| with a literal fallback implies the left side could be falsy; prove the shape instead",
+  message: "|| with a literal fallback assumes the left side could be falsy; if the type guarantees a value, remove the fallback; if not, fix the type upstream",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {
     if (node.type !== "LogicalExpression") return;

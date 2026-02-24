@@ -5,7 +5,7 @@ import { child, prop } from "../../utils/narrow.ts";
 export const noRedundantExistenceGuard: SingleFileRule = {
   id: "no-redundant-existence-guard",
   severity: "warning",
-  message: "Redundant existence guard (obj && obj.prop); if obj is typed, the guard is unnecessary",
+  message: "Redundant existence guard (obj && obj.prop); if the type guarantees obj exists, remove the guard; if not, fix the type upstream",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {
     if (node.type !== "IfStatement") return;
