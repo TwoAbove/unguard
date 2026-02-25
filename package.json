@@ -1,6 +1,6 @@
 {
   "name": "unguard",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Detect overdefensive AI-generated code",
   "author": "Seva Maltsev <me@seva.dev> (https://seva.dev)",
   "license": "MIT",
@@ -47,15 +47,12 @@
   },
   "dependencies": {
     "fast-glob": "^3.3.3",
-    "oxc-parser": "^0.114.0",
-    "oxc-walker": "^0.7.0",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@oxc-project/types": "^0.114.0",
     "@types/node": "^25.3.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   }
 }

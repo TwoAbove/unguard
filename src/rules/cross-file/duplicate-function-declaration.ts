@@ -1,5 +1,5 @@
+import * as ts from "typescript";
 import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
-import { child, children, prop } from "../../utils/narrow.ts";
 
 export const duplicateFunctionDeclaration: CrossFileRule = {
   id: "duplicate-function-declaration",
@@ -37,19 +37,16 @@ export const duplicateFunctionDeclaration: CrossFileRule = {
   },
 };
 
-function isSetter(node: Node): boolean {
-  // For FunctionDeclaration/FunctionExpression, body is a BlockStatement
-  let body = child(node, "body");
-  // For VariableDeclarator with arrow function, dig into init
-  if (body === null) {
-    const init = child(node, "init");
-    if (init !== null) body = child(init, "body");
+function isSetter(node: ts.Node): boolean {
+  let body: ts.Block | undefined;
+  if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) {
+    body = node.body;
+  } else if (ts.isArrowFunction(node)) {
+    body = ts.isBlock(node.body) ? node.body : undefined;
   }
-  if (body === null || body.type !== "BlockStatement") return false;
-  const stmts = children(body, "body");
-  if (stmts.length !== 1) return false;
-  const stmt = stmts[0];
-  if (stmt === undefined || stmt.type !== "ExpressionStatement") return false;
-  const expr = child(stmt, "expression");
-  return expr !== null && expr.type === "AssignmentExpression";
+  if (!body || body.statements.length !== 1) return false;
+  const stmt = body.statements[0];
+  if (stmt === undefined || !ts.isExpressionStatement(stmt)) return false;
+  return ts.isBinaryExpression(stmt.expression) &&
+    stmt.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken;
 }

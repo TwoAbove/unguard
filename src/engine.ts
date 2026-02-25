@@ -1,12 +1,11 @@
-import { parseSync, type Comment } from "oxc-parser";
-import { walk } from "oxc-walker";
 import fg from "fast-glob";
 import { readFileSync } from "node:fs";
-import type { Node } from "oxc-parser";
-import type { Diagnostic, SingleFileRule, CrossFileRule, Span, VisitContext } from "./rules/types.ts";
+import type { Diagnostic, CrossFileRule } from "./rules/types.ts";
 import { allRules } from "./rules/index.ts";
-import { isSingleFileRule } from "./rules/types.ts";
-import { collectProject } from "./collect/index.ts";
+import { isTSRule } from "./rules/types.ts";
+import { collectProject, type CommentInfo } from "./collect/index.ts";
+import { createProgramFromFiles } from "./typecheck/program.ts";
+import { runTSRules } from "./typecheck/walk.ts";
 
 export interface ScanOptions {
   paths: string[];
@@ -40,22 +39,29 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     return true;
   });
 
-  const singleFileRules = activeRules.filter(isSingleFileRule);
-  const crossFileRules = activeRules.filter((r): r is CrossFileRule => !isSingleFileRule(r));
+  const tsRules = activeRules.filter(isTSRule);
+  const crossFileRules = activeRules.filter((r): r is CrossFileRule => !isTSRule(r));
   const diagnostics: Diagnostic[] = [];
 
-  // Single-file pass: parse each file and run visitor rules
-  for (const file of files) {
-    const source = readFileSync(file, "utf8");
-    const result = parseSync(file, source);
-    const fileDiags = runSingleFileRules(singleFileRules, result.program, result.comments, source, file);
-    annotate(fileDiags, result.comments, source);
-    diagnostics.push(...fileDiags);
+  // Create program once — used by both TS rules and cross-file collect
+  const program = files.length > 0 ? createProgramFromFiles(files) : null;
+
+  // TS rule pass: run type-aware rules per file
+  if (tsRules.length > 0 && program) {
+    const checker = program.getTypeChecker();
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      const sourceFile = program.getSourceFile(file);
+      if (sourceFile) {
+        const tsDiags = runTSRules(tsRules, sourceFile, checker, source, file);
+        diagnostics.push(...tsDiags);
+      }
+    }
   }
 
   // Cross-file pass: collect project index and run analysis rules
-  if (crossFileRules.length > 0 && files.length > 0) {
-    const projectIndex = collectProject(files);
+  if (crossFileRules.length > 0 && program) {
+    const projectIndex = collectProject(program);
     for (const rule of crossFileRules) {
       const crossDiags = rule.analyze(projectIndex);
       for (const d of crossDiags) {
@@ -84,67 +90,15 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   return { diagnostics: deduped, fileCount: files.length };
 }
 
-export function runSingleFileRules(
-  rules: SingleFileRule[],
-  program: Node,
-  comments: Comment[],
-  source: string,
-  filename: string,
-): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-
-  const makeCtx = (rule: SingleFileRule): VisitContext => ({
-    filename,
-    source,
-    comments,
-    report(span: Span, message?: string) {
-      const pos = lineCol(source, span.start);
-      diagnostics.push({
-        ruleId: rule.id,
-        severity: rule.severity,
-        message: message === undefined ? rule.message : message,
-        file: filename,
-        ...pos,
-      });
-    },
-  });
-
-  const contexts = rules.map((r) => ({ rule: r, ctx: makeCtx(r) }));
-
-  walk(program, {
-    enter(node: Node, parent: Node | null) {
-      for (const { rule, ctx } of contexts) {
-        rule.visit(node, parent, ctx);
-      }
-    },
-  });
-
-  for (const { rule, ctx } of contexts) {
-    if (rule.visitComment) {
-      for (const comment of comments) {
-        rule.visitComment(comment, ctx);
-      }
-    }
-  }
-
-  return diagnostics;
-}
-
-interface Position {
-  line: number;
-  column: number;
-}
-
 /**
  * Attach annotations from comments to diagnostics.
  * A comment annotates a diagnostic if it ends on the line immediately above.
  * Consecutive line comments are joined into a single annotation.
  */
-function annotate(diagnostics: Diagnostic[], comments: Comment[], source: string): void {
+function annotate(diagnostics: Diagnostic[], comments: CommentInfo[], source: string): void {
   if (comments.length === 0 || diagnostics.length === 0) return;
 
-  // Build a map: endLine -> comment
-  const byEndLine = new Map<number, Comment[]>();
+  const byEndLine = new Map<number, CommentInfo[]>();
   for (const c of comments) {
     const endLine = lineAt(source, c.end);
     let list = byEndLine.get(endLine);
@@ -156,34 +110,30 @@ function annotate(diagnostics: Diagnostic[], comments: Comment[], source: string
   }
 
   for (const d of diagnostics) {
-    // Check inline comment on the same line first
     const inline = findInlineComment(d.line, byEndLine);
     if (inline !== null) {
       d.annotation = inline;
       continue;
     }
-    // Then check comment(s) on the line above
     const above = collectAnnotation(d.line - 1, byEndLine, source);
     if (above !== null) d.annotation = above;
   }
 }
 
-function findInlineComment(diagLine: number, byEndLine: Map<number, Comment[]>): string | null {
+function findInlineComment(diagLine: number, byEndLine: Map<number, CommentInfo[]>): string | null {
   const commentsOnLine = byEndLine.get(diagLine);
   if (commentsOnLine === undefined || commentsOnLine.length === 0) return null;
   const comment = commentsOnLine.at(-1);
   if (comment === undefined) return null;
-  // Only line comments (// ...) count as inline annotations, not block comments
   if (comment.type !== "Line") return null;
   const text = comment.value.trim();
-  // Skip @expect annotations — those are for the test harness, not user annotations
   if (text.startsWith("@expect")) return null;
   return text;
 }
 
 function collectAnnotation(
   commentEndLine: number,
-  byEndLine: Map<number, Comment[]>,
+  byEndLine: Map<number, CommentInfo[]>,
   source: string,
 ): string | null {
   const commentsOnLine = byEndLine.get(commentEndLine);
@@ -191,12 +141,10 @@ function collectAnnotation(
   const comment = commentsOnLine.at(-1);
   if (comment === undefined) return null;
 
-  // Block comment: use its value directly
   if (comment.type === "Block") {
     return cleanBlockComment(comment.value);
   }
 
-  // Line comment: walk upward to collect consecutive line comments
   const lines: string[] = [comment.value.trim()];
   let prevLine = commentEndLine - 1;
   for (;;) {
@@ -226,18 +174,4 @@ function lineAt(source: string, offset: number): number {
     if (source[i] === "\n") line++;
   }
   return line;
-}
-
-function lineCol(source: string, offset: number): Position {
-  let line = 1;
-  let col = 1;
-  for (let i = 0; i < offset && i < source.length; i++) {
-    if (source[i] === "\n") {
-      line++;
-      col = 1;
-    } else {
-      col++;
-    }
-  }
-  return { line, column: col };
 }

@@ -1,3 +1,4 @@
+import * as ts from "typescript";
 import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 
 export const duplicateTypeName: CrossFileRule = {
@@ -15,7 +16,7 @@ export const duplicateTypeName: CrossFileRule = {
       // Skip if any entry is an inferred/reference type (Awaited<ReturnType<...>>, z.infer<...>, etc.)
       // rather than a structural definition — these are intentionally derived, not duplicated
       const hasInferredType = group.some(
-        (e) => e.node.type !== "TSTypeLiteral" && e.node.type !== "TSInterfaceBody",
+        (e) => !ts.isTypeLiteralNode(e.node) && !ts.isInterfaceDeclaration(e.node),
       );
       if (hasInferredType) continue;
 

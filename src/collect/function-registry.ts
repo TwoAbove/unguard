@@ -1,4 +1,4 @@
-import type { Node } from "oxc-parser";
+import type * as ts from "typescript";
 
 export interface ParamInfo {
   name: string;
@@ -13,8 +13,9 @@ export interface FunctionEntry {
   line: number;
   hash: string;
   params: ParamInfo[];
-  node: Node;
+  node: ts.Node;
   exported: boolean;
+  symbol?: ts.Symbol;
 }
 
 export class FunctionRegistry {

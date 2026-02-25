@@ -1,4 +1,4 @@
-import type { Node } from "oxc-parser";
+import type * as ts from "typescript";
 import { hashTypeShape } from "../utils/hash.ts";
 
 export interface TypeEntry {
@@ -6,7 +6,7 @@ export interface TypeEntry {
   file: string;
   line: number;
   hash: string;
-  node: Node;
+  node: ts.Node;
   exported: boolean;
 }
 
@@ -14,8 +14,8 @@ export class TypeRegistry {
   private entries: TypeEntry[] = [];
   private byHash = new Map<string, TypeEntry[]>();
 
-  add(name: string, file: string, line: number, typeNode: Node, source: string, exported: boolean): void {
-    const hash = hashTypeShape(typeNode, source);
+  add(name: string, file: string, line: number, typeNode: ts.Node, sourceFile: ts.SourceFile, exported: boolean): void {
+    const hash = hashTypeShape(typeNode, sourceFile);
     const entry: TypeEntry = { name, file, line, hash, node: typeNode, exported };
     this.entries.push(entry);
     let list = this.byHash.get(hash);

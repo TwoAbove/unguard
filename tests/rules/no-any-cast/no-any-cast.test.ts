@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { noAnyCast } from "../../../src/rules/single-file/no-any-cast.ts";
+import { noAnyCast } from "../../../src/rules/ts/no-any-cast.ts";
 
 describe("no-any-cast", () => {
   it("allows non-any casts", () => {

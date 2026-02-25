@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { noTsIgnore } from "../../../src/rules/single-file/no-ts-ignore.ts";
+import { noTsIgnore } from "../../../src/rules/ts/no-ts-ignore.ts";
 
 describe("no-ts-ignore", () => {
   it("allows normal comments", () => {

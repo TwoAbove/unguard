@@ -10,4 +10,8 @@ describe("optional-arg-always-used", () => {
   it("flags optional params always provided", () => {
     assertCrossFileInvalid(optionalArgAlwaysUsed, new URL("./invalid", import.meta.url).pathname);
   });
+
+  it("does not false-positive on same-name functions in different modules", () => {
+    assertCrossFileValid(optionalArgAlwaysUsed, new URL("./valid-name-collision", import.meta.url).pathname);
+  });
 });

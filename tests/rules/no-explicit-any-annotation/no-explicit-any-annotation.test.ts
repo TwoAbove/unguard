@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { noExplicitAnyAnnotation } from "../../../src/rules/single-file/no-explicit-any-annotation.ts";
+import { noExplicitAnyAnnotation } from "../../../src/rules/ts/no-explicit-any-annotation.ts";
 
 describe("no-explicit-any-annotation", () => {
   it("allows non-any annotations", () => {

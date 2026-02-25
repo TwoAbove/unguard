@@ -1,6 +1,6 @@
 # unguard
 
-Static analyzer that flags defensive coding patterns where types should guarantee correctness. If a value's type proves it can't be null, the `??` fallback is noise. If a catch block is empty, the error is silently swallowed. unguard finds these.
+Type-aware static analyzer that flags defensive coding patterns where types should guarantee correctness.
 
 ## Commands
 
@@ -12,75 +12,75 @@ npm run typecheck      # tsc --noEmit
 npm run scan           # run unguard on itself
 ```
 
-CLI usage: `node bin/unguard.mjs scan [paths] [--strict] [--filter <rule-id>] [--severity=<level>] [--format=grouped|flat]`
+CLI: `node bin/unguard.mjs scan [paths] [--strict] [--filter <rule-id>] [--severity=<level>] [--format=grouped|flat]`
 
 Exit codes: 0 = clean, 1 = warnings/info only, 2 = errors.
 
 ## Architecture
 
-**Parser:** `oxc-parser` (ESTree AST). **Walker:** `oxc-walker` (traversal with parent tracking).
+Everything uses the TypeScript compiler API. A single `ts.Program` is created per scan and shared across both passes.
 
-**Two-pass design**:
-- Pass 1: Parse files, walk ASTs, run single-file visitor rules, build project-wide indices (types, functions, call sites, imports).
-- Pass 2: Run cross-file rules against collected indices.
+**Pass 1 — single-file rules** (`src/rules/ts/`): Walk each `ts.SourceFile` with `ts.forEachChild`. Rules get a `TSVisitContext` with the type checker, nullability queries, and external-declaration detection.
 
-Entry points:
-- `src/engine.ts` — `scan()` orchestrates file discovery, parsing, rule execution
-- `src/cli.ts` — CLI wrapper, output formatting
-- `src/index.ts` — public API re-exports
+**Pass 2 — cross-file rules** (`src/rules/cross-file/`): The collect layer (`src/collect/`) walks the same program to build a `ProjectIndex` — type/function registries with structural hashing, call sites with resolved `ts.Symbol` for cross-module accuracy, imports, and per-file comments. Rules implement `analyze(project: ProjectIndex)`.
+
+Key files:
+- `src/engine.ts` — `scan()` orchestrates everything
+- `src/typecheck/program.ts` — tsconfig discovery, `ts.Program` creation
+- `src/typecheck/walk.ts` — TS AST walker, `TSVisitContext`, `runTSRules()`
+- `src/typecheck/utils.ts` — shared type helpers (`isNullableType`, `includesNumberType`, etc.)
+- `src/collect/index.ts` — `collectProject(program)`, builds `ProjectIndex`
 
 ## Writing rules
 
-Rules live in `src/rules/single-file/`. Each file exports a single `SingleFileRule` constant.
+### Single-file (TS) rules
 
-A rule's `visit()` is called for every AST node. Guard on `node.type`, inspect properties, call `ctx.report(node)` to emit a diagnostic.
+Rules live in `src/rules/ts/`. Each exports a `TSRule`. The `visit()` callback fires for every AST node.
 
 ```typescript
-import type { Node } from "oxc-parser";
-import type { SingleFileRule, VisitContext } from "../types.ts";
-import { child, children, prop } from "../../utils/narrow.ts";
+import * as ts from "typescript";
+import type { TSRule, TSVisitContext } from "../types.ts";
 
-export const myRule: SingleFileRule = {
+export const myRule: TSRule = {
+  kind: "ts",
   id: "my-rule",
   severity: "warning",
-  message: "Human-readable explanation of what's wrong and what to do instead",
+  message: "Human-readable explanation",
 
-  visit(node: Node, parent: Node | null, ctx: VisitContext) {
-    if (node.type !== "CatchClause") return;
-    const body = child(node, "body");
-    if (body && body.type === "BlockStatement" && children(body, "body").length === 0) {
+  visit(node: ts.Node, ctx: TSVisitContext) {
+    if (!ts.isCatchClause(node)) return;
+    if (node.block.statements.length === 0) {
       ctx.report(node);
     }
   },
 };
 ```
 
-After creating a rule, register it in `src/rules/index.ts`.
+Register in `src/rules/index.ts`.
 
-### oxc-parser runtime vs types
+#### TSVisitContext
 
-**Critical:** `@oxc-project/types` defines `NullLiteral`, `StringLiteral`, `NumericLiteral`, etc., but at runtime oxc-parser emits `"Literal"` for all of them. The `Node` union's discriminated narrowing will not work correctly for literals. Always verify runtime `node.type` values with a quick script before relying on type narrowing:
+- `ctx.report(node, message?)` — emit diagnostic
+- `ctx.reportAtOffset(offset, message?)` — emit at arbitrary offset
+- `ctx.isNullable(node)` — type includes null/undefined
+- `ctx.isExternal(node)` — declaration from node_modules
+- `ctx.checker` — full `ts.TypeChecker`
+- `ctx.sourceFile`, `ctx.source`, `ctx.filename`
 
-```bash
-node -e "const {parseSync}=require('oxc-parser'); const {walk}=require('oxc-walker'); const r=parseSync('t.ts','YOUR CODE'); walk(r.program,{enter(n){console.log(n.type,n.start)}})"
-```
+### Cross-file rules
 
-### Accessing node properties
+Rules live in `src/rules/cross-file/`. Each exports a `CrossFileRule` with `analyze(project: ProjectIndex)`. The `ProjectIndex` provides registries, call sites, and imports. Function/call-site entries carry `symbol?: ts.Symbol` for cross-module matching by declaration identity.
 
-Never use `as any`. Use the helpers from `src/utils/narrow.ts`:
+### TS AST patterns
 
-- `prop<T>(node, "key")` — read a scalar property
-- `child(node, "key")` — read a child node (returns `Node | null`)
-- `children(node, "key")` — read a child node array (returns `Node[]`)
-
-These contain the single `as any` boundary so rule code stays clean.
-
-### Comments
-
-Comments are not AST nodes in oxc-parser. They come from `parseSync().comments` as `{ type: "Line" | "Block", value: string, start: number, end: number }`.
-
-- `ctx.comments` — available in `visit()` for rules that need to check for nearby comments (e.g., `no-empty-catch` checks for comments inside the catch block).
-- `visitComment?()` — implement on your rule to iterate all comments. See `no-ts-ignore.ts`.
+| Pattern | TS API |
+|---------|--------|
+| `x ?? y` | `ts.isBinaryExpression(node)`, `QuestionQuestionToken` |
+| `obj?.prop` | `ts.isPropertyAccessExpression(node) && node.questionDotToken` |
+| `x!` | `ts.isNonNullExpression(node)` |
+| `x as T` | `ts.isAsExpression(node)` |
+| `catch (e) {}` | `ts.isCatchClause(node)`, `node.block.statements` |
+| Comments | `ts.getLeadingCommentRanges(source, node.getFullStart())` |
 
 ## Testing rules
 
@@ -88,29 +88,35 @@ Each rule has a test directory: `tests/rules/<rule-id>/`
 
 ```
 tests/rules/no-empty-catch/
-  valid.ts                    # code that should NOT trigger
-  invalid.ts                  # code that SHOULD trigger, with annotations
-  no-empty-catch.test.ts      # vitest test file
+  valid.ts                    # should NOT trigger
+  invalid.ts                  # SHOULD trigger, with annotations
+  no-empty-catch.test.ts      # vitest
 ```
 
-**Annotation convention:** Mark lines that should produce diagnostics with `// @expect <rule-id>`. The annotation goes on the line where the **matched node starts** (its `start` byte offset maps to that line).
+Mark expected diagnostics with `// @expect <rule-id>`.
+
+Type-aware fixtures need declarations so the checker can reason about types:
 
 ```typescript
+// valid.ts
+declare const maybe: string | null;
+const z = maybe ?? "default";
+
 // invalid.ts
-try {
-  riskyOperation();
-} catch (err) {} // @expect no-empty-catch
+declare const str: string;
+const x = str ?? "fallback"; // @expect no-nullish-coalescing
 ```
 
-The test harness (`tests/harness.ts`) delegates to `runSingleFileRules` from `src/engine.ts` — it does not reimplement parsing or rule execution. It provides:
+Harness (`tests/harness.ts`):
 - `assertValid(rule, fixturePath)` — expects 0 diagnostics
-- `assertInvalid(rule, fixturePath)` — expects diagnostics exactly on `@expect`-annotated lines
+- `assertInvalid(rule, fixturePath)` — expects diagnostics on `@expect` lines
+- `assertCrossFileValid(rule, fixtureDir)` — cross-file, expects 0
+- `assertCrossFileInvalid(rule, fixtureDir)` — cross-file, matches `@expect`
 
-Test file pattern:
 ```typescript
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { myRule } from "../../../src/rules/single-file/my-rule.ts";
+import { myRule } from "../../../src/rules/ts/my-rule.ts";
 
 describe("my-rule", () => {
   it("allows valid code", () => {
@@ -125,5 +131,5 @@ describe("my-rule", () => {
 ## Constraints
 
 - ESM only. No CJS.
-- Dogfood unguard on unguard.
+- Dogfood: `npm run scan` must report 0 issues.
 - Test every rule with both valid and invalid fixtures.

@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { noTypeAssertion } from "../../../src/rules/single-file/no-type-assertion.ts";
+import { noTypeAssertion } from "../../../src/rules/ts/no-type-assertion.ts";
 
 describe("no-type-assertion", () => {
   it("allows as const and as unknown", () => {

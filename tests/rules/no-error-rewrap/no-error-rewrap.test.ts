@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { noErrorRewrap } from "../../../src/rules/single-file/no-error-rewrap.ts";
+import { noErrorRewrap } from "../../../src/rules/ts/no-error-rewrap.ts";
 
 describe("no-error-rewrap", () => {
   it("allows rethrow and wrap-with-cause", () => {

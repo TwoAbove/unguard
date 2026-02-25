@@ -1,18 +1,22 @@
-import { parseSync, type Comment } from "oxc-parser";
-import { walk } from "oxc-walker";
+import * as ts from "typescript";
 import { readFileSync } from "node:fs";
-import type { Node } from "oxc-parser";
 import { TypeRegistry } from "./type-registry.ts";
-import { FunctionRegistry, type FunctionEntry, type ParamInfo } from "./function-registry.ts";
+import { FunctionRegistry, type ParamInfo } from "./function-registry.ts";
 import { hashFunctionBody } from "../utils/hash.ts";
-import { prop, child, children } from "../utils/narrow.ts";
+
+export interface CommentInfo {
+  type: "Line" | "Block";
+  value: string;
+  start: number;
+  end: number;
+}
 
 export interface ProjectIndex {
   types: TypeRegistry;
   functions: FunctionRegistry;
   callSites: CallSite[];
   imports: ImportEntry[];
-  files: Map<string, { source: string; program: Node; comments: Comment[] }>;
+  files: Map<string, { source: string; sourceFile: ts.SourceFile; comments: CommentInfo[] }>;
 }
 
 export interface CallSite {
@@ -20,7 +24,8 @@ export interface CallSite {
   file: string;
   line: number;
   argCount: number;
-  node: Node;
+  node: ts.CallExpression;
+  symbol?: ts.Symbol;
 }
 
 export interface ImportEntry {
@@ -30,154 +35,129 @@ export interface ImportEntry {
   source: string;
 }
 
-export function collectProject(files: string[]): ProjectIndex {
+export function collectProject(program: ts.Program): ProjectIndex {
+  const checker = program.getTypeChecker();
   const types = new TypeRegistry();
   const functions = new FunctionRegistry();
   const callSites: CallSite[] = [];
   const imports: ImportEntry[] = [];
-  const fileMap = new Map<string, { source: string; program: Node; comments: Comment[] }>();
+  const fileMap = new Map<string, { source: string; sourceFile: ts.SourceFile; comments: CommentInfo[] }>();
 
-  for (const file of files) {
-    const source = readFileSync(file, "utf8");
-    const result = parseSync(file, source);
-    fileMap.set(file, { source, program: result.program, comments: result.comments });
+  for (const sourceFile of program.getSourceFiles()) {
+    const file = sourceFile.fileName;
+    // Skip declaration files and node_modules
+    if (sourceFile.isDeclarationFile) continue;
+    if (file.includes("node_modules")) continue;
 
-    walk(result.program, {
-      enter(node: Node, parent: Node | null) {
-        collectTypes(node, parent, file, source, types);
-        collectFunctions(node, parent, file, source, functions);
-        collectCallSites(node, file, source, callSites);
-        collectImports(node, file, imports);
-      },
-    });
+    const source = sourceFile.getFullText();
+    const comments = collectAllComments(sourceFile);
+    fileMap.set(file, { source, sourceFile, comments });
+
+    function visit(node: ts.Node): void {
+      collectTypes(node, file, sourceFile, types);
+      collectFunctions(node, file, sourceFile, checker, functions);
+      collectCallSites(node, file, sourceFile, checker, callSites);
+      collectImports(node, file, imports);
+      ts.forEachChild(node, visit);
+    }
+    ts.forEachChild(sourceFile, visit);
   }
 
   return { types, functions, callSites, imports, files: fileMap };
 }
 
-function lineAt(source: string, offset: number): number {
-  let line = 1;
-  for (let i = 0; i < offset; i++) {
-    if (source[i] === "\n") line++;
-  }
-  return line;
+function isExported(node: ts.Node): boolean {
+  if (!ts.canHaveModifiers(node)) return false;
+  const mods = ts.getModifiers(node);
+  if (mods === undefined) return false;
+  return mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
 }
 
-function collectTypes(node: Node, parent: Node | null, file: string, source: string, registry: TypeRegistry): void {
-  if (node.type === "TSTypeAliasDeclaration") {
-    const id = child(node, "id");
-    const typeAnno = child(node, "typeAnnotation");
-    if (id && typeAnno) {
-      registry.add(prop<string>(id, "name"), file, lineAt(source, node.start), typeAnno, source, isExported(parent));
-    }
+function collectTypes(node: ts.Node, file: string, sourceFile: ts.SourceFile, registry: TypeRegistry): void {
+  if (ts.isTypeAliasDeclaration(node)) {
+    const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
+    registry.add(node.name.text, file, line, node.type, sourceFile, isExported(node));
   }
-  if (node.type === "TSInterfaceDeclaration") {
-    const id = child(node, "id");
-    const body = child(node, "body");
-    if (id && body) {
-      registry.add(prop<string>(id, "name"), file, lineAt(source, node.start), body, source, isExported(parent));
-    }
+  if (ts.isInterfaceDeclaration(node)) {
+    const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
+    registry.add(node.name.text, file, line, node, sourceFile, isExported(node));
   }
 }
 
-function isExported(parent: Node | null): boolean {
-  if (parent === null) return false;
-  return parent.type === "ExportNamedDeclaration" || parent.type === "ExportDefaultDeclaration";
-}
-
-function collectFunctions(node: Node, parent: Node | null, file: string, source: string, registry: FunctionRegistry): void {
-  if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") {
-    const id = child(node, "id");
-    const body = child(node, "body");
-    if (!id || !body) return;
-    const name = prop<string>(id, "name");
-    const params = extractParams(children(node, "params"), source);
-    const hash = hashFunctionBody(body, source);
-    const exported = isExported(parent);
-    registry.add({ name, file, line: lineAt(source, node.start), hash, params, node, exported });
+function collectFunctions(node: ts.Node, file: string, sourceFile: ts.SourceFile, checker: ts.TypeChecker, registry: FunctionRegistry): void {
+  if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+    const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
+    const params = extractParams(node.parameters, sourceFile);
+    const hash = hashFunctionBody(node.body, sourceFile);
+    const symbol = checker.getSymbolAtLocation(node.name);
+    registry.add({ name: node.name.text, file, line, hash, params, node, exported: isExported(node), symbol });
   }
-  // Arrow functions assigned to const
-  if (node.type === "VariableDeclarator") {
-    const init = child(node, "init");
-    const id = child(node, "id");
-    if (init !== null && init.type === "ArrowFunctionExpression" && id !== null && id.type === "Identifier") {
-      const body = child(init, "body");
-      if (!body) return;
-      const name = prop<string>(id, "name");
-      const params = extractParams(children(init, "params"), source);
-      const hash = hashFunctionBody(body, source);
-      // Parent is VariableDeclaration; check if "export" precedes the declaration on the same line
-      const lineStart = source.lastIndexOf("\n", node.start) + 1;
-      const linePrefix = source.slice(lineStart, node.start);
-      const exported = linePrefix.includes("export");
-      registry.add({ name, file, line: lineAt(source, node.start), hash, params, node, exported });
-    }
-  }
-}
 
-function paramName(node: Node, source: string): string {
-  const name = prop<string>(node, "name");
-  if (name !== undefined) return name;
-  return source.slice(node.start, node.end);
-}
-
-function typeText(node: Node | null, source: string): string | null {
-  if (node === null) return null;
-  return source.slice(node.start, node.end);
-}
-
-function extractParams(params: Node[], source: string): ParamInfo[] {
-  return params.map((p) => {
-    if (p.type === "AssignmentPattern") {
-      const left = child(p, "left");
-      if (left === null) {
-        return { name: "?", optional: false, hasDefault: true, typeText: null };
+  // Arrow functions assigned to const: const foo = (...) => { ... }
+  if (ts.isVariableStatement(node)) {
+    const exported = isExported(node);
+    for (const decl of node.declarationList.declarations) {
+      if (decl.initializer && ts.isArrowFunction(decl.initializer) && ts.isIdentifier(decl.name)) {
+        const arrow = decl.initializer;
+        const body = ts.isBlock(arrow.body) ? arrow.body : arrow.body;
+        const line = ts.getLineAndCharacterOfPosition(sourceFile, decl.getStart(sourceFile)).line + 1;
+        const params = extractParams(arrow.parameters, sourceFile);
+        const hash = hashFunctionBody(body, sourceFile);
+        const symbol = checker.getSymbolAtLocation(decl.name);
+        registry.add({ name: decl.name.text, file, line, hash, params, node: arrow, exported, symbol });
       }
-      return {
-        name: paramName(left, source),
-        optional: prop<boolean>(left, "optional") === true,
-        hasDefault: true,
-        typeText: typeText(child(left, "typeAnnotation"), source),
-      };
     }
-    const typeAnno = child(p, "typeAnnotation");
-    return {
-      name: paramName(p, source),
-      optional: prop<boolean>(p, "optional") === true,
-      hasDefault: false,
-      typeText: typeText(typeAnno, source),
-    };
+  }
+}
+
+function extractParams(parameters: ts.NodeArray<ts.ParameterDeclaration>, sourceFile: ts.SourceFile): ParamInfo[] {
+  return parameters.map((p) => {
+    const name = p.name.getText(sourceFile);
+    const optional = p.questionToken !== undefined;
+    const hasDefault = p.initializer !== undefined;
+    const typeText = p.type ? p.type.getText(sourceFile) : null;
+    return { name, optional, hasDefault, typeText };
   });
 }
 
-function collectImports(node: Node, file: string, imports: ImportEntry[]): void {
-  // Regular imports: import { x } from "./mod"
-  // Re-exports: export { x } from "./mod" (treated as import links for cross-file analysis)
-  if (node.type !== "ImportDeclaration" && node.type !== "ExportNamedDeclaration") return;
-  const sourceNode = child(node, "source");
-  if (sourceNode === null) return;
-  const moduleSource = prop<string>(sourceNode, "value");
-  if (moduleSource === undefined) return;
-  const specifiers = children(node, "specifiers");
-  for (const spec of specifiers) {
-    if (spec.type === "ImportSpecifier" || spec.type === "ExportSpecifier") {
-      const imported = child(spec, spec.type === "ExportSpecifier" ? "local" : "imported");
-      const local = child(spec, spec.type === "ExportSpecifier" ? "exported" : "local");
-      if (imported !== null && local !== null) {
+function collectImports(node: ts.Node, file: string, imports: ImportEntry[]): void {
+  if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+    const moduleSource = node.moduleSpecifier.text;
+    const clause = node.importClause;
+    if (!clause) return;
+
+    // Default import
+    if (clause.name) {
+      imports.push({
+        file,
+        localName: clause.name.text,
+        importedName: "default",
+        source: moduleSource,
+      });
+    }
+
+    // Named imports
+    if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+      for (const el of clause.namedBindings.elements) {
         imports.push({
           file,
-          localName: prop<string>(local, "name"),
-          importedName: prop<string>(imported, "name"),
+          localName: el.name.text,
+          importedName: el.propertyName ? el.propertyName.text : el.name.text,
           source: moduleSource,
         });
       }
-    } else if (spec.type === "ImportDefaultSpecifier") {
-      const local = child(spec, "local");
-      if (local !== null) {
+    }
+  }
+
+  // Re-exports: export { x } from "./mod"
+  if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+    const moduleSource = node.moduleSpecifier.text;
+    if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+      for (const el of node.exportClause.elements) {
         imports.push({
           file,
-          localName: prop<string>(local, "name"),
-          importedName: "default",
+          localName: el.name.text,
+          importedName: el.propertyName ? el.propertyName.text : el.name.text,
           source: moduleSource,
         });
       }
@@ -185,23 +165,75 @@ function collectImports(node: Node, file: string, imports: ImportEntry[]): void 
   }
 }
 
-function collectCallSites(node: Node, file: string, source: string, sites: CallSite[]): void {
-  if (node.type !== "CallExpression") return;
-  const callee = child(node, "callee");
+function collectCallSites(node: ts.Node, file: string, sourceFile: ts.SourceFile, checker: ts.TypeChecker, sites: CallSite[]): void {
+  if (!ts.isCallExpression(node)) return;
   let calleeName: string | null = null;
-  if (callee !== null && callee.type === "Identifier") {
-    calleeName = prop<string>(callee, "name");
-  } else if (callee !== null && callee.type === "MemberExpression" && prop<boolean>(callee, "computed") !== true) {
-    const property = child(callee, "property");
-    if (property) calleeName = prop<string>(property, "name");
+  if (ts.isIdentifier(node.expression)) {
+    calleeName = node.expression.text;
+  } else if (ts.isPropertyAccessExpression(node.expression)) {
+    calleeName = node.expression.name.text;
   }
   if (calleeName) {
+    const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
+    // Resolve the symbol the call refers to (follows imports to the declaration)
+    let symbol: ts.Symbol | undefined;
+    try {
+      symbol = checker.getSymbolAtLocation(node.expression);
+      if (symbol && (symbol.flags & ts.SymbolFlags.Alias)) {
+        symbol = checker.getAliasedSymbol(symbol);
+      }
+    } catch {
+      // Symbol resolution can fail on synthetic nodes
+    }
     sites.push({
       calleeName,
       file,
-      line: lineAt(source, node.start),
-      argCount: children(node, "arguments").length,
+      line,
+      argCount: node.arguments.length,
       node,
+      symbol,
     });
   }
+}
+
+/** Collect all comments from a source file. */
+export function collectAllComments(sourceFile: ts.SourceFile): CommentInfo[] {
+  const comments: CommentInfo[] = [];
+  const source = sourceFile.getFullText();
+  const seen = new Set<number>();
+
+  function visit(node: ts.Node): void {
+    const leading = ts.getLeadingCommentRanges(source, node.getFullStart());
+    if (leading) {
+      for (const r of leading) {
+        if (seen.has(r.pos)) continue;
+        seen.add(r.pos);
+        const isLine = r.kind === ts.SyntaxKind.SingleLineCommentTrivia;
+        comments.push({
+          type: isLine ? "Line" : "Block",
+          value: source.slice(r.pos + 2, isLine ? r.end : r.end - 2),
+          start: r.pos,
+          end: r.end,
+        });
+      }
+    }
+    const trailing = ts.getTrailingCommentRanges(source, node.getEnd());
+    if (trailing) {
+      for (const r of trailing) {
+        if (seen.has(r.pos)) continue;
+        seen.add(r.pos);
+        const isLine = r.kind === ts.SyntaxKind.SingleLineCommentTrivia;
+        comments.push({
+          type: isLine ? "Line" : "Block",
+          value: source.slice(r.pos + 2, isLine ? r.end : r.end - 2),
+          start: r.pos,
+          end: r.end,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+
+  return comments;
 }

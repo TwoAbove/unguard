@@ -1,51 +1,43 @@
 import { createHash } from "node:crypto";
-import type { Node } from "oxc-parser";
-import { prop, child, children } from "./narrow.ts";
+import * as ts from "typescript";
 
 /**
  * Create a structural hash of a type node.
  * Normalizes by sorting property names and stripping locations.
  */
-export function hashTypeShape(node: Node, source: string): string {
-  const normalized = normalizeTypeNode(node, source);
+export function hashTypeShape(node: ts.Node, sourceFile: ts.SourceFile): string {
+  const normalized = normalizeTypeNode(node, sourceFile);
   return createHash("sha256").update(normalized).digest("hex").slice(0, 16);
 }
 
-function normalizeTypeNode(node: Node, source: string): string {
-  if (node.type === "TSTypeLiteral") {
-    const members = children(node, "members");
-    const normalized = members.map((m) => normalizeTypeNode(m, source)).sort().join(";");
+function normalizeTypeNode(node: ts.Node, sourceFile: ts.SourceFile): string {
+  if (ts.isTypeLiteralNode(node)) {
+    const normalized = node.members.map((m) => normalizeTypeNode(m, sourceFile)).sort().join(";");
     return `{${normalized}}`;
   }
-  if (node.type === "TSInterfaceBody") {
-    const members = children(node, "body");
-    const normalized = members.map((m) => normalizeTypeNode(m, source)).sort().join(";");
+  if (ts.isInterfaceDeclaration(node)) {
+    const normalized = node.members.map((m) => normalizeTypeNode(m, sourceFile)).sort().join(";");
     return `{${normalized}}`;
   }
-  if (node.type === "TSPropertySignature") {
-    const key = child(node, "key");
-    const rawName = key ? prop<string>(key, "name") : undefined;
-    const keyName = rawName !== undefined ? rawName : key ? source.slice(key.start, key.end) : "?";
-    const typeAnno = child(node, "typeAnnotation");
-    const innerType = typeAnno ? child(typeAnno, "typeAnnotation") : null;
-    const type = innerType ? normalizeTypeNode(innerType, source) : "any";
-    const optional = prop<boolean>(node, "optional") ? "?" : "";
+  if (ts.isPropertySignature(node)) {
+    const keyName = node.name.getText(sourceFile);
+    const optional = node.questionToken ? "?" : "";
+    const type = node.type ? normalizeTypeNode(node.type, sourceFile) : "any";
     return `${keyName}${optional}:${type}`;
   }
-  if (node.type === "TSTypeAnnotation") {
-    const inner = child(node, "typeAnnotation");
-    return inner ? normalizeTypeNode(inner, source) : "any";
+  if (ts.isTypeAliasDeclaration(node)) {
+    return normalizeTypeNode(node.type, sourceFile);
   }
   // Fallback: use source text with whitespace normalized
-  return source.slice(node.start, node.end).replace(/\s+/g, " ").trim();
+  return node.getText(sourceFile).replace(/\s+/g, " ").trim();
 }
 
 /**
  * Hash a function body for duplicate detection.
  * Normalizes whitespace.
  */
-export function hashFunctionBody(node: Node, source: string): string {
-  const bodyText = source.slice(node.start, node.end);
+export function hashFunctionBody(node: ts.Node, sourceFile: ts.SourceFile): string {
+  const bodyText = node.getText(sourceFile);
   const normalized = bodyText.replace(/\s+/g, " ").trim();
   return createHash("sha256").update(normalized).digest("hex").slice(0, 16);
 }

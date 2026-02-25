@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { noNullTernaryNormalization } from "../../../src/rules/single-file/no-null-ternary-normalization.ts";
+import { noNullTernaryNormalization } from "../../../src/rules/ts/no-null-ternary-normalization.ts";
 
 describe("no-null-ternary-normalization", () => {
   it("allows normal ternaries", () => {

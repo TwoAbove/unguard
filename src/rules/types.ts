@@ -1,4 +1,4 @@
-import type { Node, Comment } from "oxc-parser";
+import type * as ts from "typescript";
 
 export interface Diagnostic {
   ruleId: string;
@@ -10,24 +10,23 @@ export interface Diagnostic {
   annotation?: string;
 }
 
-export interface Span {
-  start: number;
-  end: number;
-}
-
-export interface VisitContext {
-  report(span: Span, message?: string): void;
+export interface TSVisitContext {
+  report(node: ts.Node, message?: string): void;
+  reportAtOffset(offset: number, message?: string): void;
   filename: string;
   source: string;
-  comments: Comment[];
+  sourceFile: ts.SourceFile;
+  checker: ts.TypeChecker;
+  isNullable(node: ts.Node): boolean;
+  isExternal(node: ts.Node): boolean;
 }
 
-export interface SingleFileRule {
+export interface TSRule {
+  kind: "ts";
   id: string;
   severity: "info" | "warning" | "error";
   message: string;
-  visit(node: Node, parent: Node | null, ctx: VisitContext): void;
-  visitComment?(comment: Comment, ctx: VisitContext): void;
+  visit(node: ts.Node, ctx: TSVisitContext): void;
 }
 
 import type { ProjectIndex } from "../collect/index.ts";
@@ -40,8 +39,8 @@ export interface CrossFileRule {
   analyze(project: ProjectIndex): Diagnostic[];
 }
 
-export type Rule = SingleFileRule | CrossFileRule;
+export type Rule = CrossFileRule | TSRule;
 
-export function isSingleFileRule(r: Rule): r is SingleFileRule {
-  return "visit" in r;
+export function isTSRule(r: Rule): r is TSRule {
+  return "kind" in r && r.kind === "ts";
 }

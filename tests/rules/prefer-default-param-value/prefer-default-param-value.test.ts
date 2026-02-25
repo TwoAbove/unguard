@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { preferDefaultParamValue } from "../../../src/rules/single-file/prefer-default-param-value.ts";
+import { preferDefaultParamValue } from "../../../src/rules/ts/prefer-default-param-value.ts";
 
 describe("prefer-default-param-value", () => {
   it("allows default params and non-param fallbacks", () => {

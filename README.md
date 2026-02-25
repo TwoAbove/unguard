@@ -2,7 +2,13 @@
 
 Unguard your code. Defend against overdefensive AI-generated code.
 
-Built on [oxc-parser](https://oxc.rs).
+Type-aware static analysis powered by the TypeScript compiler API.
+
+If `??` is on a non-nullable type, you don't need it.
+
+If `?.` is on a guaranteed object, it's noise.
+
+unguard proves it with types.
 
 ## Install
 
@@ -19,15 +25,16 @@ npx unguard
 ## Usage
 
 ```bash
-unguard src/
-unguard src/ --strict              # treat warnings as errors (CI)
-unguard src/ --filter no-any-cast  # run a single rule
-unguard src/ --severity=error      # only show errors
-unguard src/ --format=flat         # one-line-per-diagnostic, grepable
-unguard src/ --format=flat | grep error
+unguard src
+unguard src --strict                  # treat warnings as errors (CI)
+unguard src --filter no-any-cast      # run a single rule
+unguard src --severity=error          # only show errors
+unguard src --severity=error,warning  # errors and warnings only
+unguard src --format=flat             # one-line-per-diagnostic, grepable
+unguard src --format=flat | grep error
 ```
 
-Add `unguard` to your lint check.
+Add `unguard` to your lint check, especially if code is written by AI.
 
 ### Exit codes
 
@@ -40,19 +47,19 @@ Add `unguard` to your lint check.
 Use `--severity=error` in CI to only fail on errors:
 
 ```bash
-unguard src/ --severity=error || exit 1
+unguard src --severity=error || exit 1
 ```
 
 ### Output formats
 
-**Grouped** (default) — diagnostics grouped by file:
+**Grouped** (default) -- diagnostics grouped by file:
 
 ```txt
 src/lib/probe.ts
   37:4       error  Empty catch blocks hide failures...  no-empty-catch
 ```
 
-**Flat** (`--format=flat`) — one line per diagnostic, grepable:
+**Flat** (`--format=flat`) -- one line per diagnostic, grepable:
 
 ```txt
 src/lib/probe.ts:37:4 error [no-empty-catch] Empty catch blocks hide failures...
@@ -69,25 +76,27 @@ src/lib/probe.ts:37:4 error [no-empty-catch] Empty catch blocks hide failures...
 | `no-type-assertion` | error | `x as unknown as T` |
 | `no-ts-ignore` | error | `@ts-ignore` / `@ts-expect-error` |
 
-### Defensive code
+### Defensive code (type-aware)
+
+These rules use the TypeScript type checker. Non-nullable types suppress the diagnostic; nullable types are flagged.
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `no-optional-property-access` | info | `obj?.prop` |
-| `no-optional-element-access` | info | `obj?.[key]` |
-| `no-optional-call` | info | `fn?.()` |
-| `no-nullish-coalescing` | info | `x ?? fallback` |
-| `no-logical-or-fallback` | warning | `map.get(k) \|\| fallback` — data-structure lookups where `??` is correct |
+| `no-optional-property-access` | warning | `obj?.prop` on a non-nullable type |
+| `no-optional-element-access` | warning | `obj?.[key]` on a non-nullable type |
+| `no-optional-call` | warning | `fn?.()` on a non-nullable type |
+| `no-nullish-coalescing` | warning | `x ?? fallback` on a non-nullable type |
+| `no-logical-or-fallback` | warning | `map.get(k) \|\| fallback` -- data-structure lookups where `??` is correct; `\|\|` on numeric types that swallow `0` |
 | `no-null-ternary-normalization` | warning | `x == null ? fallback : x` |
-| `no-non-null-assertion` | warning | `x!` without a local narrowing guard |
+| `no-non-null-assertion` | warning | `x!` on a nullable type without a local narrowing guard |
 | `no-double-negation-coercion` | info | `!!value` |
-| `no-redundant-existence-guard` | warning | `obj && obj.prop` |
+| `no-redundant-existence-guard` | warning | `obj && obj.prop` on a non-nullable type |
 
 ### Error handling
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `no-empty-catch` | error | `catch {}` with no body (comments count as annotation) |
+| `no-empty-catch` | error | `catch {}` with no body and no comment |
 | `no-catch-return` | warning | `catch { return fallback }` with no logging or rethrow |
 | `no-error-rewrap` | error | `throw new Error(e.message)` without `{ cause: e }` |
 

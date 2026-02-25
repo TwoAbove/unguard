@@ -12,10 +12,13 @@ export const optionalArgAlwaysUsed: CrossFileRule = {
       // Find optional params (by index)
       for (let i = 0; i < fn.params.length; i++) {
         const param = fn.params[i];
+        if (param === undefined) continue;
         if (!param.optional && !param.hasDefault) continue;
 
-        // Find all call sites matching this function name
-        const callSites = project.callSites.filter((c) => c.calleeName === fn.name);
+        // Find call sites for this function — use symbol matching when available
+        const callSites = fn.symbol
+          ? project.callSites.filter((c) => c.symbol === fn.symbol)
+          : project.callSites.filter((c) => c.calleeName === fn.name);
 
         // Need at least 2 call sites to be meaningful
         if (callSites.length < 2) continue;

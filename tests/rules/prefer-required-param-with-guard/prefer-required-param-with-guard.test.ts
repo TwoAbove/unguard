@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { preferRequiredParamWithGuard } from "../../../src/rules/single-file/prefer-required-param-with-guard.ts";
+import { preferRequiredParamWithGuard } from "../../../src/rules/ts/prefer-required-param-with-guard.ts";
 
 describe("prefer-required-param-with-guard", () => {
   it("allows required params with guards and optional without guards", () => {

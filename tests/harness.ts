@@ -1,15 +1,19 @@
-import { parseSync } from "oxc-parser";
 import { readFileSync } from "node:fs";
 import fg from "fast-glob";
 import { expect } from "vitest";
-import type { SingleFileRule, CrossFileRule, Diagnostic } from "../src/rules/types.ts";
-import { runSingleFileRules } from "../src/engine.ts";
+import type { CrossFileRule, TSRule, Diagnostic } from "../src/rules/types.ts";
 import { collectProject } from "../src/collect/index.ts";
+import { runTSRules } from "../src/typecheck/walk.ts";
+import { createProgramFromFiles } from "../src/typecheck/program.ts";
 
-/** Run a single-file rule against source code, return diagnostics. */
-export function runRule(rule: SingleFileRule, source: string, filename = "test.ts"): Diagnostic[] {
-  const result = parseSync(filename, source);
-  return runSingleFileRules([rule], result.program, result.comments, source, filename);
+/** Run a TS rule against a fixture file with full type checking. */
+function runTSRule(rule: TSRule, fixturePath: string): Diagnostic[] {
+  const source = readFileSync(fixturePath, "utf8");
+  const program = createProgramFromFiles([fixturePath]);
+  const checker = program.getTypeChecker();
+  const sourceFile = program.getSourceFile(fixturePath);
+  if (!sourceFile) throw new Error(`Could not get source file for ${fixturePath}`);
+  return runTSRules([rule], sourceFile, checker, source, fixturePath);
 }
 
 /** Parse `// @expect <rule-id>` annotations from source. Returns set of 1-based line numbers. */
@@ -26,16 +30,15 @@ function parseExpectations(source: string, ruleId: string): Set<number> {
 }
 
 /** Assert rule produces 0 diagnostics on valid fixture. */
-export function assertValid(rule: SingleFileRule, fixturePath: string): void {
-  const source = readFileSync(fixturePath, "utf8");
-  const diagnostics = runRule(rule, source, fixturePath);
+export function assertValid(rule: TSRule, fixturePath: string): void {
+  const diagnostics = runTSRule(rule, fixturePath);
   expect(diagnostics, `Expected no diagnostics in ${fixturePath}`).toHaveLength(0);
 }
 
 /** Assert rule diagnostics match @expect annotations in invalid fixture. */
-export function assertInvalid(rule: SingleFileRule, fixturePath: string): void {
+export function assertInvalid(rule: TSRule, fixturePath: string): void {
   const source = readFileSync(fixturePath, "utf8");
-  const diagnostics = runRule(rule, source, fixturePath);
+  const diagnostics = runTSRule(rule, fixturePath);
   const expected = parseExpectations(source, rule.id);
 
   expect(expected.size, `No @expect annotations found in ${fixturePath}`).toBeGreaterThan(0);
@@ -57,7 +60,8 @@ function collectFixtureFiles(dir: string): string[] {
 /** Run a cross-file rule against a directory of fixtures, return diagnostics. */
 export function runCrossFileRule(rule: CrossFileRule, fixtureDir: string): Diagnostic[] {
   const files = collectFixtureFiles(fixtureDir);
-  const index = collectProject(files);
+  const program = createProgramFromFiles(files);
+  const index = collectProject(program);
   return rule.analyze(index);
 }
 

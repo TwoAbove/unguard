@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { assertValid, assertInvalid } from "../../harness.ts";
-import { noDynamicImport } from "../../../src/rules/single-file/no-dynamic-import.ts";
+import { noDynamicImport } from "../../../src/rules/ts/no-dynamic-import.ts";
 
 describe("no-dynamic-import", () => {
   it("allows static imports", () => {

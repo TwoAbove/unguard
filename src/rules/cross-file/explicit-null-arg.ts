@@ -1,6 +1,6 @@
+import * as ts from "typescript";
 import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
-import { children } from "../../utils/narrow.ts";
-import { isNullish } from "../../utils/ast.ts";
+import { isNullishLiteral } from "../../typecheck/utils.ts";
 
 export const explicitNullArg: CrossFileRule = {
   id: "explicit-null-arg",
@@ -10,22 +10,26 @@ export const explicitNullArg: CrossFileRule = {
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
 
-    // Build a set of known project function names for fast lookup
+    // Build lookup structures for known project functions
     const projectFnNames = new Set<string>();
+    const projectFnSymbols = new Set<ts.Symbol>();
     for (const fn of project.functions.getAll()) {
       projectFnNames.add(fn.name);
+      if (fn.symbol) projectFnSymbols.add(fn.symbol);
     }
 
     for (const site of project.callSites) {
-      // Only flag calls to functions defined in the project
-      if (!projectFnNames.has(site.calleeName)) continue;
+      // Only flag calls to functions defined in the project — prefer symbol matching
+      const isProjectFn = site.symbol
+        ? projectFnSymbols.has(site.symbol)
+        : projectFnNames.has(site.calleeName);
+      if (!isProjectFn) continue;
 
-      const args = children(site.node, "arguments");
-      for (let i = 0; i < args.length; i++) {
-        const arg = args[i];
+      for (let i = 0; i < site.node.arguments.length; i++) {
+        const arg = site.node.arguments[i];
         if (arg === undefined) continue;
-        if (isNullish(arg)) {
-          const val = arg.type === "Literal" ? "null" : "undefined";
+        if (isNullishLiteral(arg)) {
+          const val = arg.kind === ts.SyntaxKind.NullKeyword ? "null" : "undefined";
           diagnostics.push({
             ruleId: this.id,
             severity: this.severity,
@@ -42,3 +46,4 @@ export const explicitNullArg: CrossFileRule = {
     return diagnostics;
   },
 };
+
