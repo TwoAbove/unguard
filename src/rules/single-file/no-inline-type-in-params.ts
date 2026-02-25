@@ -3,7 +3,7 @@ import type { SingleFileRule, VisitContext } from "../types.ts";
 
 export const noInlineTypeInParams: SingleFileRule = {
   id: "no-inline-type-in-params",
-  severity: "warning",
+  severity: "info",
   message: "Inline type literal in annotation; extract to a named type for reuse and clarity",
 
   visit(node: Node, parent: Node | null, ctx: VisitContext) {

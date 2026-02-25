@@ -20,11 +20,43 @@ npx unguard
 
 ```bash
 unguard src/
-unguard src/ --strict           # treat warnings as errors (CI)
+unguard src/ --strict              # treat warnings as errors (CI)
 unguard src/ --filter no-any-cast  # run a single rule
+unguard src/ --severity=error      # only show errors
+unguard src/ --format=flat         # one-line-per-diagnostic, grepable
+unguard src/ --format=flat | grep error
 ```
 
 Add `unguard` to your lint check.
+
+### Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| 0 | No issues |
+| 1 | Warnings or info only |
+| 2 | At least one error |
+
+Use `--severity=error` in CI to only fail on errors:
+
+```bash
+unguard src/ --severity=error || exit 1
+```
+
+### Output formats
+
+**Grouped** (default) — diagnostics grouped by file:
+
+```txt
+src/lib/probe.ts
+  37:4       error  Empty catch blocks hide failures...  no-empty-catch
+```
+
+**Flat** (`--format=flat`) — one line per diagnostic, grepable:
+
+```txt
+src/lib/probe.ts:37:4 error [no-empty-catch] Empty catch blocks hide failures...
+```
 
 ## Current Rules
 
@@ -33,7 +65,7 @@ Add `unguard` to your lint check.
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
 | `no-any-cast` | error | `x as any` |
-| `no-explicit-any-annotation` | warning | `param: any`, `const x: any` |
+| `no-explicit-any-annotation` | error | `param: any`, `const x: any` |
 | `no-type-assertion` | error | `x as unknown as T` |
 | `no-ts-ignore` | error | `@ts-ignore` / `@ts-expect-error` |
 
@@ -41,10 +73,10 @@ Add `unguard` to your lint check.
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `no-optional-property-access` | warning | `obj?.prop` |
-| `no-optional-element-access` | warning | `obj?.[key]` |
-| `no-optional-call` | warning | `fn?.()` |
-| `no-nullish-coalescing` | warning | `x ?? fallback` |
+| `no-optional-property-access` | info | `obj?.prop` |
+| `no-optional-element-access` | info | `obj?.[key]` |
+| `no-optional-call` | info | `fn?.()` |
+| `no-nullish-coalescing` | info | `x ?? fallback` |
 | `no-logical-or-fallback` | warning | `x \|\| fallback` |
 | `no-null-ternary-normalization` | warning | `x == null ? fallback : x` |
 | `no-non-null-assertion` | warning | `x!` |
@@ -55,7 +87,7 @@ Add `unguard` to your lint check.
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `no-empty-catch` | error | `catch {}` with no body |
+| `no-empty-catch` | error | `catch {}` with no body (comments count as annotation) |
 | `no-catch-return` | warning | `catch { return fallback }` without rethrowing |
 | `no-error-rewrap` | error | `throw new Error(e.message)` without `{ cause: e }` |
 
@@ -63,7 +95,7 @@ Add `unguard` to your lint check.
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `no-inline-type-in-params` | warning | `fn(opts: { a: string; b: number })` |
+| `no-inline-type-in-params` | info | `fn(opts: { a: string; b: number })` |
 | `prefer-default-param-value` | info | Optional param reassigned with `??` in the body |
 | `prefer-required-param-with-guard` | info | `arg?: T` followed by `if (!arg) throw` |
 
@@ -71,10 +103,10 @@ Add `unguard` to your lint check.
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `duplicate-type-declaration` | warning | Same type shape in multiple files |
-| `duplicate-type-name` | warning | Same exported type name, different shapes |
-| `duplicate-function-declaration` | warning | Same function body in multiple files |
-| `duplicate-function-name` | warning | Same exported function name, different bodies |
+| `duplicate-type-declaration` | error | Same type shape in multiple files |
+| `duplicate-type-name` | error | Same exported type name, different shapes |
+| `duplicate-function-declaration` | error | Same function body in multiple files |
+| `duplicate-function-name` | error | Same exported function name, different bodies |
 | `optional-arg-always-used` | warning | Optional param provided at every call site |
 | `explicit-null-arg` | warning | `fn(null)` / `fn(undefined)` to project functions |
 
@@ -94,7 +126,7 @@ type AnyNode = Record<string, any>;
 ```
 
 ```txt
-file.ts:2:31 warning Explicit `any` annotation ... (intentional escape hatch for untyped AST access)
+file.ts:2:31 error Explicit `any` annotation ... (intentional escape hatch for untyped AST access)
 ```
 
 ## API

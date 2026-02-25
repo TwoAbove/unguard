@@ -1,1 +1,1 @@
-type Point = { x: number; y: number }; // @expect duplicate-type-declaration
+type Point = { x: number; y: number };

@@ -2,7 +2,7 @@ import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 
 export const duplicateTypeName: CrossFileRule = {
   id: "duplicate-type-name",
-  severity: "warning",
+  severity: "error",
   message: "Same type name exported from multiple files; consolidate or rename to avoid ambiguity",
 
   analyze(project: ProjectIndex): Diagnostic[] {
@@ -12,8 +12,9 @@ export const duplicateTypeName: CrossFileRule = {
       const hashes = new Set(group.map((e) => e.hash));
       if (hashes.size === 1) continue;
 
-      for (const entry of group) {
-        const others = group
+      const sorted = [...group].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+      for (const entry of sorted.slice(1)) {
+        const others = sorted
           .filter((e) => e !== entry)
           .map((e) => `${e.file}:${e.line}`)
           .join(", ");

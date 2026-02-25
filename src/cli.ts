@@ -3,6 +3,13 @@ import pc from "picocolors";
 import { scan } from "./engine.ts";
 import type { Diagnostic } from "./rules/types.ts";
 
+type Severity = "info" | "warning" | "error";
+const SEVERITY_RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
+
+function isSeverity(value: string): value is Severity {
+  return value === "info" || value === "warning" || value === "error";
+}
+
 export async function main(argv: string[]): Promise<number> {
   const args = argv.slice(2);
   const first = args[0];
@@ -15,6 +22,8 @@ export async function main(argv: string[]): Promise<number> {
   const userArgs = first === "scan" ? args.slice(1) : args;
   const strict = userArgs.includes("--strict");
   const filter = extractFlag(userArgs, "--filter");
+  const format = extractFlag(userArgs, "--format", "grouped");
+  const severityFilter = extractFlag(userArgs, "--severity");
   const paths = userArgs.filter((a) => !a.startsWith("--"));
 
   const result = await scan({
@@ -23,18 +32,23 @@ export async function main(argv: string[]): Promise<number> {
     rules: filter ? [filter] : undefined,
   });
 
-  if (result.diagnostics.length === 0) {
+  const minRank = severityFilter !== undefined && isSeverity(severityFilter) ? SEVERITY_RANK[severityFilter] : 0;
+  const filtered = minRank > 0 ? result.diagnostics.filter((d) => SEVERITY_RANK[d.severity] >= minRank) : result.diagnostics;
+
+  if (filtered.length === 0) {
     console.log(pc.green(`No issues found in ${result.fileCount} files.`));
     return 0;
   }
 
-  printDiagnostics(result.diagnostics);
-  printSummary(result.diagnostics, result.fileCount);
+  if (format === "flat") {
+    printDiagnosticsFlat(filtered);
+  } else {
+    printDiagnostics(filtered);
+  }
+  printSummary(filtered, result.fileCount);
 
-  const filesWithErrors = new Set(
-    result.diagnostics.filter((d) => d.severity === "error").map((d) => d.file),
-  ).size;
-  return filesWithErrors;
+  const hasError = filtered.some((d) => d.severity === "error");
+  return hasError ? 2 : 1;
 }
 
 function printHelp() {
@@ -45,22 +59,41 @@ Usage:
   unguard [paths...] [options]
 
 Options:
-  --strict          Treat all warnings as errors
-  --filter <rule>   Run only the specified rule
-  -h, --help        Show this help
+  --strict              Treat all warnings as errors
+  --filter <rule>       Run only the specified rule
+  --severity <level>    Show only diagnostics at this level or above (error, warning, info)
+  --format <mode>       Output format: grouped (default) or flat
+  -h, --help            Show this help
+
+Exit codes:
+  0  No issues
+  1  Warnings or info only
+  2  At least one error
 
 Examples:
   unguard scan src
   unguard scan src --strict
-  unguard scan src --filter no-empty-catch`);
+  unguard scan src --filter no-empty-catch
+  unguard scan src --severity=error
+  unguard scan src --format=flat | grep error`);
 }
 
-function extractFlag(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1) return undefined;
-  const value = args[idx + 1];
-  args.splice(idx, 2);
-  return value;
+function extractFlag(args: string[], flag: string, fallback?: string): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === undefined) continue;
+    if (arg === flag) {
+      const value = args[i + 1];
+      args.splice(i, 2);
+      return value;
+    }
+    if (arg.startsWith(flag + "=")) {
+      const value = arg.slice(flag.length + 1);
+      args.splice(i, 1);
+      return value;
+    }
+  }
+  return fallback;
 }
 
 function printDiagnostics(diagnostics: Diagnostic[]) {
@@ -91,6 +124,17 @@ function printDiagnostics(diagnostics: Diagnostic[]) {
     }
 
     console.log();
+  }
+}
+
+function printDiagnosticsFlat(diagnostics: Diagnostic[]) {
+  const cwdBase = process.cwd();
+  const cwd = cwdBase + "/";
+
+  for (const d of diagnostics) {
+    const rel = relative(cwdBase, d.file);
+    const msg = d.message.replaceAll(cwd, "");
+    console.log(`${rel}:${d.line}:${d.column} ${d.severity} [${d.ruleId}] ${msg}`);
   }
 }
 

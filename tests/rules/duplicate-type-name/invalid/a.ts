@@ -1,4 +1,4 @@
-export type Config = { // @expect duplicate-type-name
+export type Config = {
   host: string;
   port: number;
 };

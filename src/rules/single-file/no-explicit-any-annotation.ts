@@ -3,7 +3,7 @@ import type { SingleFileRule, VisitContext } from "../types.ts";
 
 export const noExplicitAnyAnnotation: SingleFileRule = {
   id: "no-explicit-any-annotation",
-  severity: "warning",
+  severity: "error",
   message: "Explicit `any` annotation erases type safety; use a specific type, `unknown`, or a generic",
 
   visit(node: Node, parent: Node | null, ctx: VisitContext) {

@@ -1,3 +1,3 @@
-export function format(value: string) { // @expect duplicate-function-name
+export function format(value: string) {
   return value.trim();
 }
