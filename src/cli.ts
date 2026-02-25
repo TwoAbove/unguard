@@ -1,46 +1,54 @@
+import { parseArgs } from "node:util";
 import { relative } from "node:path";
 import pc from "picocolors";
 import { scan } from "./engine.ts";
 import type { Diagnostic } from "./rules/types.ts";
 
 type Severity = "info" | "warning" | "error";
-const SEVERITY_RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
-
 function isSeverity(value: string): value is Severity {
   return value === "info" || value === "warning" || value === "error";
 }
 
 export async function main(argv: string[]): Promise<number> {
-  const args = argv.slice(2);
-  const first = args[0];
+  const rawArgs = argv.slice(2);
+  const userArgs = rawArgs[0] === "scan" ? rawArgs.slice(1) : rawArgs;
 
-  if (first === "-h" || first === "--help") {
+  const { values, positionals: paths } = parseArgs({
+    args: userArgs,
+    options: {
+      strict: { type: "boolean", default: false },
+      filter: { type: "string" },
+      format: { type: "string", default: "grouped" },
+      severity: { type: "string", multiple: true, default: [] },
+      help: { type: "boolean", short: "h", default: false },
+    },
+    allowPositionals: true,
+  });
+
+  if (values.help) {
     printHelp();
     return 0;
   }
 
-  const userArgs = first === "scan" ? args.slice(1) : args;
-  const strict = userArgs.includes("--strict");
-  const filter = extractFlag(userArgs, "--filter");
-  const format = extractFlag(userArgs, "--format", "grouped");
-  const severityFilter = extractFlag(userArgs, "--severity");
-  const paths = userArgs.filter((a) => !a.startsWith("--"));
-
   const result = await scan({
     paths,
-    strict,
-    rules: filter ? [filter] : undefined,
+    strict: values.strict,
+    rules: values.filter ? [values.filter] : undefined,
   });
 
-  const minRank = severityFilter !== undefined && isSeverity(severityFilter) ? SEVERITY_RANK[severityFilter] : 0;
-  const filtered = minRank > 0 ? result.diagnostics.filter((d) => SEVERITY_RANK[d.severity] >= minRank) : result.diagnostics;
+  const severitySet = values.severity.length > 0
+    ? new Set(values.severity.filter(isSeverity))
+    : null;
+  const filtered = severitySet
+    ? result.diagnostics.filter((d) => severitySet.has(d.severity))
+    : result.diagnostics;
 
   if (filtered.length === 0) {
     console.log(pc.green(`No issues found in ${result.fileCount} files.`));
     return 0;
   }
 
-  if (format === "flat") {
+  if (values.format === "flat") {
     printDiagnosticsFlat(filtered);
   } else {
     printDiagnostics(filtered);
@@ -61,7 +69,7 @@ Usage:
 Options:
   --strict              Treat all warnings as errors
   --filter <rule>       Run only the specified rule
-  --severity <level>    Show only diagnostics at this level or above (error, warning, info)
+  --severity <level>    Filter by severity (error, warning, info). Repeatable.
   --format <mode>       Output format: grouped (default) or flat
   -h, --help            Show this help
 
@@ -75,26 +83,10 @@ Examples:
   unguard scan src --strict
   unguard scan src --filter no-empty-catch
   unguard scan src --severity=error
+  unguard scan src --severity=error --severity=warning
   unguard scan src --format=flat | grep error`);
 }
 
-function extractFlag(args: string[], flag: string, fallback?: string): string | undefined {
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === undefined) continue;
-    if (arg === flag) {
-      const value = args[i + 1];
-      args.splice(i, 2);
-      return value;
-    }
-    if (arg.startsWith(flag + "=")) {
-      const value = arg.slice(flag.length + 1);
-      args.splice(i, 1);
-      return value;
-    }
-  }
-  return fallback;
-}
 
 function printDiagnostics(diagnostics: Diagnostic[]) {
   const byFile = new Map<string, Diagnostic[]>();

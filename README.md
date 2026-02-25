@@ -77,9 +77,9 @@ src/lib/probe.ts:37:4 error [no-empty-catch] Empty catch blocks hide failures...
 | `no-optional-element-access` | info | `obj?.[key]` |
 | `no-optional-call` | info | `fn?.()` |
 | `no-nullish-coalescing` | info | `x ?? fallback` |
-| `no-logical-or-fallback` | warning | `x \|\| fallback` |
+| `no-logical-or-fallback` | warning | `map.get(k) \|\| fallback` — data-structure lookups where `??` is correct |
 | `no-null-ternary-normalization` | warning | `x == null ? fallback : x` |
-| `no-non-null-assertion` | warning | `x!` |
+| `no-non-null-assertion` | warning | `x!` without a local narrowing guard |
 | `no-double-negation-coercion` | info | `!!value` |
 | `no-redundant-existence-guard` | warning | `obj && obj.prop` |
 
@@ -88,7 +88,7 @@ src/lib/probe.ts:37:4 error [no-empty-catch] Empty catch blocks hide failures...
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
 | `no-empty-catch` | error | `catch {}` with no body (comments count as annotation) |
-| `no-catch-return` | warning | `catch { return fallback }` without rethrowing |
+| `no-catch-return` | warning | `catch { return fallback }` with no logging or rethrow |
 | `no-error-rewrap` | error | `throw new Error(e.message)` without `{ cause: e }` |
 
 ### Interface design

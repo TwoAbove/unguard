@@ -1,18 +1,18 @@
 import type { Node } from "oxc-parser";
 import type { SingleFileRule, VisitContext } from "../types.ts";
-import { child, prop } from "../../utils/narrow.ts";
+import { child, isFunctionLike, prop } from "../../utils/narrow.ts";
 
 export const noCatchReturn: SingleFileRule = {
   id: "no-catch-return",
   severity: "warning",
   message:
-    "Catch block returns a fallback value, forcing callers to handle two data shapes; rethrow or let the error propagate",
+    "Catch block silently returns a fallback value with no logging; rethrow, log the error, or let it propagate",
 
   visit(node: Node, _parent: Node | null, ctx: VisitContext) {
     if (node.type !== "CatchClause") return;
     const body = child(node, "body");
     if (body === null) return;
-    if (hasReturn(body) && !hasThrow(body)) {
+    if (hasReturn(body) && !hasThrow(body) && !hasLogging(body)) {
       ctx.report(node);
     }
   },
@@ -26,6 +26,39 @@ function hasThrow(block: Node): boolean {
   return walkForType(block, "ThrowStatement");
 }
 
+const LOG_OBJECTS = new Set(["console", "logger", "log"]);
+
+function hasLogging(root: Node): boolean {
+  if (root.type === "CallExpression") {
+    const callee = child(root, "callee");
+    if (callee && callee.type === "MemberExpression") {
+      const obj = child(callee, "object");
+      if (obj && obj.type === "Identifier") {
+        const name = prop<string>(obj, "name");
+        if (name !== undefined && LOG_OBJECTS.has(name)) return true;
+      }
+    }
+  }
+  const keys = Object.keys(root);
+  for (const key of keys) {
+    if (key === "start" || key === "end" || key === "type") continue;
+    const val = prop<unknown>(root, key);
+    if (val === null || val === undefined || typeof val !== "object") continue;
+    if (isFunctionLike(val as Node)) continue;
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        if (item !== null && typeof item === "object" && "type" in item) {
+          if (isFunctionLike(item as Node)) continue;
+          if (hasLogging(item as Node)) return true;
+        }
+      }
+    } else if ("type" in val) {
+      if (hasLogging(val as Node)) return true;
+    }
+  }
+  return false;
+}
+
 function walkForType(root: Node, targetType: string): boolean {
   if (root.type === targetType) return true;
   const keys = Object.keys(root);
@@ -34,11 +67,11 @@ function walkForType(root: Node, targetType: string): boolean {
     const val = prop<unknown>(root, key);
     if (val === null || val === undefined || typeof val !== "object") continue;
     // Skip nested function scopes — their returns/throws are their own
-    if (isFunction(val as Node)) continue;
+    if (isFunctionLike(val as Node)) continue;
     if (Array.isArray(val)) {
       for (const item of val) {
         if (item !== null && typeof item === "object" && "type" in item) {
-          if (isFunction(item as Node)) continue;
+          if (isFunctionLike(item as Node)) continue;
           if (walkForType(item as Node, targetType)) return true;
         }
       }
@@ -49,10 +82,3 @@ function walkForType(root: Node, targetType: string): boolean {
   return false;
 }
 
-function isFunction(node: Node): boolean {
-  return (
-    node.type === "FunctionDeclaration" ||
-    node.type === "FunctionExpression" ||
-    node.type === "ArrowFunctionExpression"
-  );
-}

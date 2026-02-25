@@ -15,11 +15,27 @@ try {
   return null;
 }
 
-// Catch that logs
+// Catch that logs only (no return)
 try {
   riskyOperation();
 } catch (err) {
   console.error(err);
+}
+
+// Catch with return AND logging — error is recorded
+try {
+  riskyOperation();
+} catch (err) {
+  console.error(err);
+  return { error: true };
+}
+
+// Catch with logger.warn and return
+try {
+  riskyOperation();
+} catch (err) {
+  logger.warn("Operation failed", err);
+  return null;
 }
 
 // Empty catch (different rule)
@@ -39,3 +55,4 @@ try {
 }
 
 declare function riskyOperation(): void;
+declare const logger: { warn(...args: unknown[]): void };

@@ -18,7 +18,9 @@ export const duplicateFunctionName: CrossFileRule = {
       // Skip wrapper/facade pattern: one file imports the function from another file in the group
       // Also handles barrel re-exports (A imports from barrel, barrel re-exports from B in group)
       const groupFiles = new Set(group.map((e) => e.file));
-      const funcName = group[0]!.name;
+      const first = group[0];
+      if (first === undefined) continue;
+      const funcName = first.name;
       const hasImportLink = project.imports.some((imp) => {
         if (!groupFiles.has(imp.file)) return false;
         if (imp.importedName !== funcName && imp.localName !== funcName) return false;

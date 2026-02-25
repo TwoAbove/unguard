@@ -10,6 +10,15 @@ import type { Node } from "oxc-parser";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch for untyped AST access
 type AnyNode = Record<string, any>;
 
+/** Check if node is a function boundary (declaration, expression, or arrow). */
+export function isFunctionLike(node: Node): boolean {
+  return (
+    node.type === "FunctionDeclaration" ||
+    node.type === "FunctionExpression" ||
+    node.type === "ArrowFunctionExpression"
+  );
+}
+
 /** Safely access a property on any AST node. */
 export function prop<T = unknown>(node: Node, key: string): T {
   return (node as AnyNode)[key] as T;
