@@ -11,6 +11,7 @@ export interface ProjectIndex {
   types: TypeRegistry;
   functions: FunctionRegistry;
   callSites: CallSite[];
+  imports: ImportEntry[];
   files: Map<string, { source: string; program: Node; comments: Comment[] }>;
 }
 
@@ -22,10 +23,18 @@ export interface CallSite {
   node: Node;
 }
 
+export interface ImportEntry {
+  file: string;
+  localName: string;
+  importedName: string;
+  source: string;
+}
+
 export function collectProject(files: string[]): ProjectIndex {
   const types = new TypeRegistry();
   const functions = new FunctionRegistry();
   const callSites: CallSite[] = [];
+  const imports: ImportEntry[] = [];
   const fileMap = new Map<string, { source: string; program: Node; comments: Comment[] }>();
 
   for (const file of files) {
@@ -38,11 +47,12 @@ export function collectProject(files: string[]): ProjectIndex {
         collectTypes(node, parent, file, source, types);
         collectFunctions(node, parent, file, source, functions);
         collectCallSites(node, file, source, callSites);
+        collectImports(node, file, imports);
       },
     });
   }
 
-  return { types, functions, callSites, files: fileMap };
+  return { types, functions, callSites, imports, files: fileMap };
 }
 
 function lineAt(source: string, offset: number): number {
@@ -138,6 +148,39 @@ function extractParams(params: Node[], source: string): ParamInfo[] {
       typeText: typeText(typeAnno, source),
     };
   });
+}
+
+function collectImports(node: Node, file: string, imports: ImportEntry[]): void {
+  if (node.type !== "ImportDeclaration") return;
+  const sourceNode = child(node, "source");
+  if (sourceNode === null) return;
+  const moduleSource = prop<string>(sourceNode, "value");
+  if (moduleSource === undefined) return;
+  const specifiers = children(node, "specifiers");
+  for (const spec of specifiers) {
+    if (spec.type === "ImportSpecifier") {
+      const imported = child(spec, "imported");
+      const local = child(spec, "local");
+      if (imported !== null && local !== null) {
+        imports.push({
+          file,
+          localName: prop<string>(local, "name"),
+          importedName: prop<string>(imported, "name"),
+          source: moduleSource,
+        });
+      }
+    } else if (spec.type === "ImportDefaultSpecifier") {
+      const local = child(spec, "local");
+      if (local !== null) {
+        imports.push({
+          file,
+          localName: prop<string>(local, "name"),
+          importedName: "default",
+          source: moduleSource,
+        });
+      }
+    }
+  }
 }
 
 function collectCallSites(node: Node, file: string, source: string, sites: CallSite[]): void {

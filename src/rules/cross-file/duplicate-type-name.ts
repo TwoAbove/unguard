@@ -12,6 +12,13 @@ export const duplicateTypeName: CrossFileRule = {
       const hashes = new Set(group.map((e) => e.hash));
       if (hashes.size === 1) continue;
 
+      // Skip if any entry is an inferred/reference type (Awaited<ReturnType<...>>, z.infer<...>, etc.)
+      // rather than a structural definition — these are intentionally derived, not duplicated
+      const hasInferredType = group.some(
+        (e) => e.node.type !== "TSTypeLiteral" && e.node.type !== "TSInterfaceBody",
+      );
+      if (hasInferredType) continue;
+
       const sorted = [...group].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
       for (const entry of sorted.slice(1)) {
         const others = sorted

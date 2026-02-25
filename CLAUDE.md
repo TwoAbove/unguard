@@ -12,14 +12,16 @@ npm run typecheck      # tsc --noEmit
 npm run scan           # run unguard on itself
 ```
 
-CLI usage: `node bin/unguard.mjs scan [paths] [--strict] [--filter <rule-id>]`
+CLI usage: `node bin/unguard.mjs scan [paths] [--strict] [--filter <rule-id>] [--severity=<level>] [--format=grouped|flat]`
+
+Exit codes: 0 = clean, 1 = warnings/info only, 2 = errors.
 
 ## Architecture
 
 **Parser:** `oxc-parser` (ESTree AST). **Walker:** `oxc-walker` (traversal with parent tracking).
 
 **Two-pass design**:
-- Pass 1: Parse files, walk ASTs, run single-file visitor rules. (Future: also build project-wide indices for cross-file analysis.)
+- Pass 1: Parse files, walk ASTs, run single-file visitor rules, build project-wide indices (types, functions, call sites, imports).
 - Pass 2: Run cross-file rules against collected indices.
 
 Entry points:
@@ -73,9 +75,12 @@ Never use `as any`. Use the helpers from `src/utils/narrow.ts`:
 
 These contain the single `as any` boundary so rule code stays clean.
 
-### Comment-based rules
+### Comments
 
-Comments are not AST nodes in oxc-parser. They come from `parseSync().comments` as `{ type: "Line" | "Block", value: string, start: number, end: number }`. To match comments, implement `visitComment?()` on your rule. See `no-ts-ignore.ts`.
+Comments are not AST nodes in oxc-parser. They come from `parseSync().comments` as `{ type: "Line" | "Block", value: string, start: number, end: number }`.
+
+- `ctx.comments` — available in `visit()` for rules that need to check for nearby comments (e.g., `no-empty-catch` checks for comments inside the catch block).
+- `visitComment?()` — implement on your rule to iterate all comments. See `no-ts-ignore.ts`.
 
 ## Testing rules
 
@@ -97,7 +102,7 @@ try {
 } catch (err) {} // @expect no-empty-catch
 ```
 
-The test harness (`tests/harness.ts`) provides:
+The test harness (`tests/harness.ts`) delegates to `runSingleFileRules` from `src/engine.ts` — it does not reimplement parsing or rule execution. It provides:
 - `assertValid(rule, fixturePath)` — expects 0 diagnostics
 - `assertInvalid(rule, fixturePath)` — expects diagnostics exactly on `@expect`-annotated lines
 
