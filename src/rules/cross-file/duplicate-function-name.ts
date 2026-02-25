@@ -16,6 +16,7 @@ export const duplicateFunctionName: CrossFileRule = {
       if (hashes.size === 1) continue;
 
       // Skip wrapper/facade pattern: one file imports the function from another file in the group
+      // Also handles barrel re-exports (A imports from barrel, barrel re-exports from B in group)
       const groupFiles = new Set(group.map((e) => e.file));
       const funcName = group[0]!.name;
       const hasImportLink = project.imports.some((imp) => {
@@ -23,7 +24,18 @@ export const duplicateFunctionName: CrossFileRule = {
         if (imp.importedName !== funcName && imp.localName !== funcName) return false;
         if (!imp.source.startsWith(".")) return false;
         const candidates = resolveCandidates(imp.file, imp.source);
-        return candidates.some((c) => groupFiles.has(c));
+        // Direct link: import resolves to a file in the group
+        if (candidates.some((c) => groupFiles.has(c))) return true;
+        // Barrel link: import resolves to an intermediary that re-exports from a group file
+        return candidates.some((c) =>
+          project.imports.some((reExp) => {
+            if (reExp.file !== c) return false;
+            if (reExp.importedName !== funcName && reExp.localName !== funcName) return false;
+            if (!reExp.source.startsWith(".")) return false;
+            const innerCandidates = resolveCandidates(reExp.file, reExp.source);
+            return innerCandidates.some((ic) => groupFiles.has(ic));
+          }),
+        );
       });
       if (hasImportLink) continue;
 

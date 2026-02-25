@@ -151,16 +151,18 @@ function extractParams(params: Node[], source: string): ParamInfo[] {
 }
 
 function collectImports(node: Node, file: string, imports: ImportEntry[]): void {
-  if (node.type !== "ImportDeclaration") return;
+  // Regular imports: import { x } from "./mod"
+  // Re-exports: export { x } from "./mod" (treated as import links for cross-file analysis)
+  if (node.type !== "ImportDeclaration" && node.type !== "ExportNamedDeclaration") return;
   const sourceNode = child(node, "source");
   if (sourceNode === null) return;
   const moduleSource = prop<string>(sourceNode, "value");
   if (moduleSource === undefined) return;
   const specifiers = children(node, "specifiers");
   for (const spec of specifiers) {
-    if (spec.type === "ImportSpecifier") {
-      const imported = child(spec, "imported");
-      const local = child(spec, "local");
+    if (spec.type === "ImportSpecifier" || spec.type === "ExportSpecifier") {
+      const imported = child(spec, spec.type === "ExportSpecifier" ? "local" : "imported");
+      const local = child(spec, spec.type === "ExportSpecifier" ? "exported" : "local");
       if (imported !== null && local !== null) {
         imports.push({
           file,
