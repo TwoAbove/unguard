@@ -27,6 +27,19 @@ import { duplicateFunctionName } from "./cross-file/duplicate-function-name.ts";
 import { duplicateTypeName } from "./cross-file/duplicate-type-name.ts";
 import { noDynamicImport } from "./ts/no-dynamic-import.ts";
 
+export type RuleCategory =
+  | "type-evasion"
+  | "defensive-code"
+  | "error-handling"
+  | "interface-design"
+  | "cross-file"
+  | "imports";
+
+export interface RuleMetadata {
+  category: RuleCategory;
+  tags: string[];
+}
+
 export const allRules: Rule[] = [
   noEmptyCatch,
   noNonNullAssertion,
@@ -55,3 +68,43 @@ export const allRules: Rule[] = [
   duplicateTypeName,
   noDynamicImport,
 ];
+
+const ruleMetadata: Record<string, RuleMetadata> = {
+  "no-any-cast": { category: "type-evasion", tags: ["safety"] },
+  "no-explicit-any-annotation": { category: "type-evasion", tags: ["safety"] },
+  "no-type-assertion": { category: "type-evasion", tags: ["safety"] },
+  "no-ts-ignore": { category: "type-evasion", tags: ["safety"] },
+
+  "no-optional-property-access": { category: "defensive-code", tags: ["type-aware"] },
+  "no-optional-element-access": { category: "defensive-code", tags: ["type-aware"] },
+  "no-optional-call": { category: "defensive-code", tags: ["type-aware"] },
+  "no-nullish-coalescing": { category: "defensive-code", tags: ["type-aware"] },
+  "no-logical-or-fallback": { category: "defensive-code", tags: ["type-aware"] },
+  "no-null-ternary-normalization": { category: "defensive-code", tags: ["type-aware"] },
+  "no-non-null-assertion": { category: "defensive-code", tags: ["type-aware"] },
+  "no-double-negation-coercion": { category: "defensive-code", tags: ["readability"] },
+  "no-redundant-existence-guard": { category: "defensive-code", tags: ["type-aware"] },
+
+  "no-empty-catch": { category: "error-handling", tags: ["safety"] },
+  "no-catch-return": { category: "error-handling", tags: ["safety"] },
+  "no-error-rewrap": { category: "error-handling", tags: ["safety"] },
+
+  "no-inline-type-in-params": { category: "interface-design", tags: ["api"] },
+  "prefer-default-param-value": { category: "interface-design", tags: ["api"] },
+  "prefer-required-param-with-guard": { category: "interface-design", tags: ["api"] },
+
+  "duplicate-type-declaration": { category: "cross-file", tags: ["duplicate"] },
+  "duplicate-type-name": { category: "cross-file", tags: ["duplicate"] },
+  "duplicate-function-declaration": { category: "cross-file", tags: ["duplicate"] },
+  "duplicate-function-name": { category: "cross-file", tags: ["duplicate"] },
+  "optional-arg-always-used": { category: "cross-file", tags: ["api"] },
+  "explicit-null-arg": { category: "cross-file", tags: ["api"] },
+
+  "no-dynamic-import": { category: "imports", tags: ["safety"] },
+};
+
+export function getRuleMetadata(ruleId: string): RuleMetadata {
+  const metadata = ruleMetadata[ruleId];
+  if (metadata !== undefined) return metadata;
+  return { category: "cross-file", tags: [] };
+}

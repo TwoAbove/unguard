@@ -3,7 +3,7 @@ import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 
 export const duplicateTypeName: CrossFileRule = {
   id: "duplicate-type-name",
-  severity: "error",
+  severity: "warning",
   message: "Same type name exported from multiple files; consolidate or rename to avoid ambiguity",
 
   analyze(project: ProjectIndex): Diagnostic[] {

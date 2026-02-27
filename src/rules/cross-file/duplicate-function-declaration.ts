@@ -3,7 +3,7 @@ import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 
 export const duplicateFunctionDeclaration: CrossFileRule = {
   id: "duplicate-function-declaration",
-  severity: "error",
+  severity: "warning",
   message: "Identical function body declared in multiple files; consolidate to a single definition",
 
   analyze(project: ProjectIndex): Diagnostic[] {

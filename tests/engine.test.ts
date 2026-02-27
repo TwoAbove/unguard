@@ -5,7 +5,9 @@ describe("engine", () => {
   it("scans test fixtures and finds diagnostics", async () => {
     const result = await scan({ paths: ["tests/rules/no-empty-catch/invalid.ts"] });
     expect(result.diagnostics.length).toBeGreaterThan(0);
-    expect(result.diagnostics[0]!.ruleId).toBe("no-empty-catch");
+    const [firstDiagnostic] = result.diagnostics;
+    expect(firstDiagnostic).toBeDefined();
+    expect(firstDiagnostic?.ruleId).toBe("no-empty-catch");
   });
 
   it("returns 0 diagnostics for valid code", async () => {
@@ -27,5 +29,58 @@ describe("engine", () => {
       rules: ["no-any-cast"],
     });
     expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("ignores files from custom glob patterns", async () => {
+    const result = await scan({
+      paths: ["tests/rules/no-empty-catch/invalid.ts"],
+      rules: ["no-empty-catch"],
+      ignore: ["**/tests/rules/no-empty-catch/**"],
+    });
+    expect(result.fileCount).toBe(0);
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("overrides rule severity by exact rule id", async () => {
+    const result = await scan({
+      paths: ["tests/rules/no-any-cast/invalid.ts"],
+      rules: ["no-any-cast"],
+      rulePolicy: { "no-any-cast": "warning" },
+    });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.severity).toBe("warning");
+  });
+
+  it("supports wildcard rule policy and off severity", async () => {
+    const offResult = await scan({
+      paths: ["tests/rules/duplicate-function-declaration/invalid"],
+      rules: ["duplicate-function-declaration"],
+      rulePolicy: { "duplicate-*": "off" },
+    });
+    expect(offResult.diagnostics).toHaveLength(0);
+
+    const errorResult = await scan({
+      paths: ["tests/rules/duplicate-function-declaration/invalid"],
+      rules: ["duplicate-function-declaration"],
+      rulePolicy: { "duplicate-*": "error" },
+    });
+    expect(errorResult.diagnostics.length).toBeGreaterThan(0);
+    expect(errorResult.diagnostics[0]?.severity).toBe("error");
+  });
+
+  it("supports category and tag selectors in rule policy", async () => {
+    const categoryResult = await scan({
+      paths: ["tests/rules/no-empty-catch/invalid.ts"],
+      rules: ["no-empty-catch"],
+      rulePolicy: [{ selector: "category:error-handling", severity: "warning" }],
+    });
+    expect(categoryResult.diagnostics[0]?.severity).toBe("warning");
+
+    const tagResult = await scan({
+      paths: ["tests/rules/no-empty-catch/invalid.ts"],
+      rules: ["no-empty-catch"],
+      rulePolicy: [{ selector: "tag:safety", severity: "off" }],
+    });
+    expect(tagResult.diagnostics).toHaveLength(0);
   });
 });

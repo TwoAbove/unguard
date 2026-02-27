@@ -25,30 +25,70 @@ npx unguard
 ## Usage
 
 ```bash
-unguard src
-unguard src --strict                  # treat warnings as errors (CI)
-unguard src --filter no-any-cast      # run a single rule
-unguard src --severity=error          # only show errors
-unguard src --severity=error,warning  # errors and warnings only
-unguard src --format=flat             # one-line-per-diagnostic, grepable
+unguard src                                  # scan files/directories
+unguard src --config ./unguard.config.json   # load config
+unguard src --ignore '**/*.gen.ts'           # add ignore globs
+unguard src --filter no-any-cast             # run a single rule
+unguard src --rule duplicate-*=warning       # override rule severity/policy
+unguard src --rule category:cross-file=warning
+unguard src --rule tag:safety=error
+unguard src --severity=error,warning         # show errors+warnings
+unguard src --fail-on=error                  # fail only on errors
+unguard src --format=flat                    # one-line-per-diagnostic, grepable
 unguard src --format=flat | grep error
 ```
 
 Add `unguard` to your lint check, especially if code is written by AI.
 
+### Config
+
+`unguard` automatically loads `./unguard.config.json` (or `./.unguardrc.json`). Use `--config <path>` to specify another file.
+
+```json
+{
+  "paths": ["src", "apps/web/src"],
+  "ignore": ["**/*.gen.ts", "**/routeTree.gen.ts"],
+  "rules": {
+    "duplicate-*": "warning",
+    "category:cross-file": "warning",
+    "tag:safety": "error",
+    "no-ts-ignore": "error",
+    "prefer-*": "off"
+  },
+  "failOn": "error"
+}
+```
+
+`rules` values can be `off`, `info`, `warning`, or `error`.
+Selectors support:
+- exact rule id: `no-ts-ignore`
+- wildcard: `duplicate-*`
+- category: `category:cross-file`
+- tag: `tag:safety`
+
+### Ignore behavior
+
+`unguard` ignores:
+- built-in: `node_modules`, `dist`, `.git`, declaration files (`*.d.ts`, `*.d.cts`, `*.d.mts`)
+- generated files: `*.gen.*`, `*.generated.*`
+- project `.gitignore`
+- anything passed via `--ignore` or config `ignore`
+
 ### Exit codes
 
 | Code | Meaning |
 | ---- | ------- |
-| 0 | No issues |
-| 1 | Warnings or info only |
-| 2 | At least one error |
+| 0 | No issues, or issues below `--fail-on` threshold |
+| 1 | Failing diagnostics without errors |
+| 2 | Failing diagnostics with at least one error |
 
-Use `--severity=error` in CI to only fail on errors:
+Use `--fail-on=error` in CI to fail only on errors while still showing all diagnostics:
 
 ```bash
-unguard src --severity=error || exit 1
+unguard src --fail-on=error
 ```
+
+`--severity` filters display only. `--fail-on` evaluates all diagnostics after rule policy.
 
 ### Output formats
 
@@ -112,10 +152,10 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `duplicate-type-declaration` | error | Same type shape in multiple files |
-| `duplicate-type-name` | error | Same exported type name, different shapes |
-| `duplicate-function-declaration` | error | Same function body in multiple files |
-| `duplicate-function-name` | error | Same exported function name, different bodies |
+| `duplicate-type-declaration` | warning | Same type shape in multiple files |
+| `duplicate-type-name` | warning | Same exported type name, different shapes |
+| `duplicate-function-declaration` | warning | Same function body in multiple files |
+| `duplicate-function-name` | warning | Same exported function name, different bodies |
 | `optional-arg-always-used` | warning | Optional param provided at every call site |
 | `explicit-null-arg` | warning | `fn(null)` / `fn(undefined)` to project functions |
 
@@ -141,10 +181,24 @@ file.ts:2:31 error Explicit `any` annotation ... (intentional escape hatch for u
 ## API
 
 ```typescript
-import { scan } from "unguard";
+import { executeScan, scan } from "unguard";
 
-const result = await scan({ paths: ["src/"] });
-for (const d of result.diagnostics) {
+const result = await scan({ paths: ["src/"] }); // raw diagnostics
+const execution = await executeScan({
+  paths: ["src"],
+  ignore: ["**/*.gen.ts"],
+  rulePolicy: {
+    "duplicate-*": "warning",
+    "category:cross-file": "warning",
+    "tag:safety": "error",
+    "prefer-*": "off",
+  },
+  showSeverities: ["error", "warning"],
+  failOn: "error",
+});
+
+console.log(execution.exitCode);
+for (const d of execution.visibleDiagnostics) {
   console.log(`${d.file}:${d.line} [${d.ruleId}] ${d.message}`);
 }
 ```

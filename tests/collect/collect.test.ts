@@ -37,7 +37,9 @@ describe("TypeRegistry", () => {
     });
     const dupes = index.types.getDuplicateGroups();
     expect(dupes.length).toBeGreaterThan(0);
-    expect(dupes[0]!.length).toBe(2);
+    const [firstDuplicateGroup] = dupes;
+    expect(firstDuplicateGroup).toBeDefined();
+    expect(firstDuplicateGroup?.length).toBe(2);
   });
 
   it("does not flag different type shapes", () => {
@@ -89,8 +91,10 @@ describe("FunctionRegistry", () => {
     });
     const fns = index.functions.getByName("greet");
     expect(fns).toHaveLength(1);
-    expect(fns[0]!.params).toHaveLength(2);
-    expect(fns[0]!.params[1]!.optional).toBe(true);
+    const [greetFn] = fns;
+    expect(greetFn).toBeDefined();
+    expect(greetFn?.params).toHaveLength(2);
+    expect(greetFn?.params[1]?.optional).toBe(true);
   });
 });
 
@@ -101,8 +105,11 @@ describe("CallSites", () => {
     });
     const greetCalls = index.callSites.filter((c) => c.calleeName === "greet");
     expect(greetCalls).toHaveLength(2);
-    expect(greetCalls[0]!.argCount).toBe(2);
-    expect(greetCalls[1]!.argCount).toBe(1);
+    const [firstCall, secondCall] = greetCalls;
+    expect(firstCall).toBeDefined();
+    expect(secondCall).toBeDefined();
+    expect(firstCall?.argCount).toBe(2);
+    expect(secondCall?.argCount).toBe(1);
   });
 
   it("collects method call sites", () => {
@@ -111,6 +118,8 @@ describe("CallSites", () => {
     });
     const methodCalls = index.callSites.filter((c) => c.calleeName === "method");
     expect(methodCalls).toHaveLength(1);
-    expect(methodCalls[0]!.argCount).toBe(3);
+    const [methodCall] = methodCalls;
+    expect(methodCall).toBeDefined();
+    expect(methodCall?.argCount).toBe(3);
   });
 });

@@ -20,8 +20,7 @@ function runTSRule(rule: TSRule, fixturePath: string): Diagnostic[] {
 function parseExpectations(source: string, ruleId: string): Set<number> {
   const lines = source.split("\n");
   const expected = new Set<number>();
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
+  for (const [i, line] of lines.entries()) {
     if (line.includes(`// @expect ${ruleId}`)) {
       expected.add(i + 1);
     }

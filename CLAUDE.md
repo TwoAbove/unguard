@@ -6,30 +6,47 @@ Type-aware static analyzer that flags defensive coding patterns where types shou
 
 ```bash
 npm run build          # tsup -> dist/
+npm run lint:biome     # biome lint for source + tests (without fixtures)
 npm run test           # vitest run
 npm run test:watch     # vitest
 npm run typecheck      # tsc --noEmit
-npm run scan           # run unguard on itself
+npm run scan           # run unguard on src + maintained tests with fail-on=error
 ```
 
-CLI: `node bin/unguard.mjs scan [paths] [--strict] [--filter <rule-id>] [--severity=<level>] [--format=grouped|flat]`
+CLI: `node bin/unguard.mjs scan [paths] [--config <path>] [--strict] [--filter <rule-id>] [--rule <selector=severity>] [--ignore <glob>] [--severity=<levels>] [--fail-on=<none|error|warning|info>] [--format=grouped|flat]`
 
-Exit codes: 0 = clean, 1 = warnings/info only, 2 = errors.
+Config: `unguard.config.json` (auto-discovered) supports `paths`, `ignore`, `rules`, `failOn`.
+Rule severity values: `off | info | warning | error`; selectors support:
+- exact id (`no-ts-ignore`)
+- wildcard (`duplicate-*`)
+- `category:<name>` (example: `category:cross-file`)
+- `tag:<name>` (example: `tag:safety`)
+Ignore source: built-ins + generated files (`*.gen.*`, `*.generated.*`) + `.gitignore` + CLI/config ignore globs.
+
+Exit codes:
+- `0`: clean or below `fail-on` threshold
+- `1`: threshold met without errors
+- `2`: threshold met with at least one error
 
 ## Architecture
 
-Everything uses the TypeScript compiler API. A single `ts.Program` is created per scan and shared across both passes.
+Pipeline is explicit and ordered:
 
-**Pass 1 — single-file rules** (`src/rules/ts/`): Walk each `ts.SourceFile` with `ts.forEachChild`. Rules get a `TSVisitContext` with the type checker, nullability queries, and external-declaration detection.
+1. **Resolve config** (`src/scan/config.ts`) — merge defaults + caller options, normalize rule policy and thresholds.
+2. **Discover files** (`src/scan/discover.ts`) — expand targets, apply built-in/generated ignores, apply `.gitignore`.
+3. **Analyze** (`src/scan/analyze.ts`) — run TS + cross-file rules using one `ts.Program`.
+4. **Classify/report policy** (`src/scan/policy.ts`) — resolve selector-based severities, output visibility, exit code.
 
-**Pass 2 — cross-file rules** (`src/rules/cross-file/`): The collect layer (`src/collect/`) walks the same program to build a `ProjectIndex` — type/function registries with structural hashing, call sites with resolved `ts.Symbol` for cross-module accuracy, imports, and per-file comments. Rules implement `analyze(project: ProjectIndex)`.
+Orchestration entrypoints:
+- `scan()` returns raw diagnostics (`src/engine.ts`)
+- `executeScan()` returns diagnostics + visible diagnostics + exit code (`src/engine.ts`)
 
-Key files:
-- `src/engine.ts` — `scan()` orchestrates everything
+Other key files:
 - `src/typecheck/program.ts` — tsconfig discovery, `ts.Program` creation
 - `src/typecheck/walk.ts` — TS AST walker, `TSVisitContext`, `runTSRules()`
 - `src/typecheck/utils.ts` — shared type helpers (`isNullableType`, `includesNumberType`, etc.)
 - `src/collect/index.ts` — `collectProject(program)`, builds `ProjectIndex`
+- `src/rules/index.ts` — rule registry + rule metadata catalog (`category`, `tags`)
 
 ## Writing rules
 

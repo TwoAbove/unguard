@@ -5,7 +5,7 @@ const EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"
 
 export const duplicateFunctionName: CrossFileRule = {
   id: "duplicate-function-name",
-  severity: "error",
+  severity: "warning",
   message: "Same function name exported from multiple files; consolidate or rename to avoid ambiguity",
 
   analyze(project: ProjectIndex): Diagnostic[] {
@@ -66,7 +66,7 @@ function resolveCandidates(fromFile: string, specifier: string): string[] {
   const candidates = [base];
   for (const ext of EXTENSIONS) {
     candidates.push(base + ext);
-    candidates.push(resolve(base, "index" + ext));
+    candidates.push(resolve(base, `index${ext}`));
   }
   return candidates;
 }
