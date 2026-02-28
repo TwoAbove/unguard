@@ -8,3 +8,8 @@ const z = maybe ?? "default";
 
 declare const optStr: string | undefined;
 const w = optStr ?? "fallback";
+
+// Array destructuring from a possibly-empty array can produce undefined at runtime.
+declare const rows: Array<{ id: string }>;
+const [row] = rows;
+const rowOrNull = row ?? null;
