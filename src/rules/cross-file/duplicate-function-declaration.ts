@@ -31,6 +31,7 @@ function getBodyBlock(node: ts.Node): ts.Block | undefined {
 }
 
 function isSingleStatement(node: ts.Node): boolean {
+  if (ts.isArrowFunction(node) && !ts.isBlock(node.body)) return true;
   const body = getBodyBlock(node);
   return body !== undefined && body.statements.length <= 1;
 }

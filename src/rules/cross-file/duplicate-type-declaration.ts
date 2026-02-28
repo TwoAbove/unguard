@@ -1,3 +1,4 @@
+import * as ts from "typescript";
 import { type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
 export const duplicateTypeDeclaration: CrossFileRule = {
@@ -10,6 +11,7 @@ export const duplicateTypeDeclaration: CrossFileRule = {
     for (const group of project.types.getDuplicateGroups()) {
       const files = new Set(group.map((e) => e.file));
       if (files.size < 2) continue;
+      if (group.every((e) => isTrivialObjectShape(e.node))) continue;
       reportDuplicateGroup(group, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Type "${e.name}" has identical shape to: ${others}`,
@@ -18,3 +20,9 @@ export const duplicateTypeDeclaration: CrossFileRule = {
     return diagnostics;
   },
 };
+
+function isTrivialObjectShape(node: ts.Node): boolean {
+  if (ts.isTypeLiteralNode(node)) return node.members.length <= 1;
+  if (ts.isInterfaceDeclaration(node)) return node.members.length <= 1;
+  return false;
+}
