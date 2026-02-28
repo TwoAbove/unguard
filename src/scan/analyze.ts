@@ -10,7 +10,8 @@ export function analyzeFiles(files: string[], rules: Rule[]): Diagnostic[] {
   const program = files.length > 0 ? createProgramFromFiles(files) : null;
   if (!program) return [];
 
-  const { index, diagnostics } = collectProject(program, tsRules);
+  const allowedFiles = new Set(files);
+  const { index, diagnostics } = collectProject(program, tsRules, allowedFiles);
 
   for (const rule of crossFileRules) {
     const crossDiagnostics = rule.analyze(index);

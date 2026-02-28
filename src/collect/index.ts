@@ -48,6 +48,7 @@ export interface ImportEntry {
 export function collectProject(
   program: ts.Program,
   tsRules?: TSRule[],
+  allowedFiles?: Set<string>,
 ): { index: ProjectIndex; diagnostics: Diagnostic[] } {
   const checker = program.getTypeChecker();
   const types = new TypeRegistry();
@@ -62,9 +63,10 @@ export function collectProject(
 
   for (const sourceFile of program.getSourceFiles()) {
     const file = sourceFile.fileName;
-    // Skip declaration files and node_modules
+    // Skip declaration files, node_modules, and files not in the discovered set
     if (sourceFile.isDeclarationFile) continue;
     if (file.includes("node_modules")) continue;
+    if (allowedFiles && !allowedFiles.has(file)) continue;
 
     const source = sourceFile.getFullText();
     const comments = collectAllComments(sourceFile);
