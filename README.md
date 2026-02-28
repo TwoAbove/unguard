@@ -144,7 +144,6 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `no-inline-type-in-params` | info | `fn(opts: { a: string; b: number })` |
 | `prefer-default-param-value` | info | Optional param reassigned with `??` in the body |
 | `prefer-required-param-with-guard` | info | `arg?: T` followed by `if (!arg) throw` |
 
@@ -154,8 +153,15 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 | ---- | -------- | --------------- |
 | `duplicate-type-declaration` | warning | Same type shape in multiple files |
 | `duplicate-type-name` | warning | Same exported type name, different shapes |
-| `duplicate-function-declaration` | warning | Same function body in multiple files |
+| `duplicate-function-declaration` | warning | Same function body in multiple files (2+ statements) |
 | `duplicate-function-name` | warning | Same exported function name, different bodies |
+| `duplicate-constant-declaration` | warning | Same constant value in multiple files |
+| `duplicate-inline-type-in-params` | warning | Same inline `{ ... }` param type shape repeated 2+ times |
+| `duplicate-file` | warning | File with identical content to another file |
+| `near-duplicate-function` | warning | Function bodies identical after normalizing params, strings, numbers, `this` |
+| `duplicate-statement-sequence` | info | Repeated contiguous statement blocks (3+ statements) |
+| `trivial-wrapper` | info | Function that delegates to another without transformation |
+| `unused-export` | info | Exported function with no usages in the project |
 | `optional-arg-always-used` | warning | Optional param provided at every call site |
 | `explicit-null-arg` | warning | `fn(null)` / `fn(undefined)` to project functions |
 

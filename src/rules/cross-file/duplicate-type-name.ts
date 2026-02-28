@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
+import { type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
 export const duplicateTypeName: CrossFileRule = {
   id: "duplicate-type-name",
@@ -9,32 +9,18 @@ export const duplicateTypeName: CrossFileRule = {
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     for (const group of project.types.getNameCollisionGroups()) {
-      // Skip groups already caught by duplicate-type-declaration (identical shapes)
       const hashes = new Set(group.map((e) => e.hash));
       if (hashes.size === 1) continue;
 
-      // Skip if any entry is an inferred/reference type (Awaited<ReturnType<...>>, z.infer<...>, etc.)
-      // rather than a structural definition — these are intentionally derived, not duplicated
       const hasInferredType = group.some(
         (e) => !ts.isTypeLiteralNode(e.node) && !ts.isInterfaceDeclaration(e.node),
       );
       if (hasInferredType) continue;
 
-      const sorted = [...group].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
-      for (const entry of sorted.slice(1)) {
-        const others = sorted
-          .filter((e) => e !== entry)
-          .map((e) => `${e.file}:${e.line}`)
-          .join(", ");
-        diagnostics.push({
-          ruleId: this.id,
-          severity: this.severity,
-          message: `Exported type "${entry.name}" also defined in: ${others}`,
-          file: entry.file,
-          line: entry.line,
-          column: 1,
-        });
-      }
+      reportDuplicateGroup(group, this.id, this.severity,
+        (e) => `${e.file}:${e.line}`,
+        (e, others) => `Exported type "${e.name}" also defined in: ${others}`,
+        diagnostics);
     }
     return diagnostics;
   },

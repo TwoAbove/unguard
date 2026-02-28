@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { getFunctionBodyStatements } from "../../typecheck/utils.ts";
 
 export const preferRequiredParamWithGuard: TSRule = {
   kind: "ts",
@@ -8,10 +9,9 @@ export const preferRequiredParamWithGuard: TSRule = {
   message: "Optional param with immediate guard (if (!param) return/throw); make it required instead",
 
   visit(node: ts.Node, ctx: TSVisitContext) {
-    if (!ts.isFunctionDeclaration(node) && !ts.isArrowFunction(node)) return;
-    if (!node.body || !ts.isBlock(node.body)) return;
-    const stmts = node.body.statements;
-    if (stmts.length === 0) return;
+    const result = getFunctionBodyStatements(node);
+    if (result === null) return;
+    const { statements: stmts, fn } = result;
 
     const firstStmt = stmts[0];
     if (firstStmt === undefined || !ts.isIfStatement(firstStmt)) return;
@@ -46,7 +46,7 @@ export const preferRequiredParamWithGuard: TSRule = {
 
     if (!isGuard) return;
 
-    const isOptional = node.parameters.some(
+    const isOptional = fn.parameters.some(
       (p) => ts.isIdentifier(p.name) && p.name.text === guardedName && p.questionToken !== undefined,
     );
     if (isOptional) ctx.report(firstStmt);

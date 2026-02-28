@@ -37,3 +37,12 @@ export function isNullishLiteral(node: ts.Node): boolean {
   if (ts.isIdentifier(node) && node.text === "undefined") return true;
   return false;
 }
+
+type FunctionLike = ts.FunctionDeclaration | ts.ArrowFunction;
+
+export function getFunctionBodyStatements(node: ts.Node): { statements: ts.NodeArray<ts.Statement>; fn: FunctionLike } | null {
+  if (!ts.isFunctionDeclaration(node) && !ts.isArrowFunction(node)) return null;
+  if (!node.body || !ts.isBlock(node.body)) return null;
+  if (node.body.statements.length === 0) return null;
+  return { statements: node.body.statements, fn: node };
+}

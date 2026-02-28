@@ -1,39 +1,24 @@
-import { readFileSync } from "node:fs";
 import { collectProject, type CommentInfo } from "../collect/index.ts";
 import { isTSRule } from "../rules/types.ts";
 import type { CrossFileRule, Diagnostic, Rule } from "../rules/types.ts";
 import { createProgramFromFiles } from "../typecheck/program.ts";
-import { runTSRules } from "../typecheck/walk.ts";
 
 export function analyzeFiles(files: string[], rules: Rule[]): Diagnostic[] {
   const tsRules = rules.filter(isTSRule);
   const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
-  const diagnostics: Diagnostic[] = [];
 
   const program = files.length > 0 ? createProgramFromFiles(files) : null;
-  if (!program) return diagnostics;
+  if (!program) return [];
 
-  if (tsRules.length > 0) {
-    const checker = program.getTypeChecker();
-    for (const file of files) {
-      const source = readFileSync(file, "utf8");
-      const sourceFile = program.getSourceFile(file);
-      if (sourceFile) {
-        diagnostics.push(...runTSRules(tsRules, sourceFile, checker, source, file));
-      }
-    }
-  }
+  const { index, diagnostics } = collectProject(program, tsRules);
 
-  if (crossFileRules.length > 0) {
-    const projectIndex = collectProject(program);
-    for (const rule of crossFileRules) {
-      const crossDiagnostics = rule.analyze(projectIndex);
-      for (const diagnostic of crossDiagnostics) {
-        const fileData = projectIndex.files.get(diagnostic.file);
-        if (fileData !== undefined) annotate([diagnostic], fileData.comments, fileData.source);
-      }
-      diagnostics.push(...crossDiagnostics);
+  for (const rule of crossFileRules) {
+    const crossDiagnostics = rule.analyze(index);
+    for (const diagnostic of crossDiagnostics) {
+      const fileData = index.files.get(diagnostic.file);
+      if (fileData !== undefined) annotate([diagnostic], fileData.comments, fileData.source);
     }
+    diagnostics.push(...crossDiagnostics);
   }
 
   return dedupeDiagnostics(diagnostics);
@@ -81,12 +66,15 @@ function annotate(diagnostics: Diagnostic[], comments: CommentInfo[], source: st
   }
 }
 
-function findInlineComment(diagLine: number, byEndLine: Map<number, CommentInfo[]>): string | null {
-  const commentsOnLine = byEndLine.get(diagLine);
+function lastCommentOnLine(line: number, byEndLine: Map<number, CommentInfo[]>): CommentInfo | null {
+  const commentsOnLine = byEndLine.get(line);
   if (commentsOnLine === undefined || commentsOnLine.length === 0) return null;
-  const comment = commentsOnLine.at(-1);
-  if (comment === undefined) return null;
-  if (comment.type !== "Line") return null;
+  return commentsOnLine.at(-1) ?? null;
+}
+
+function findInlineComment(diagLine: number, byEndLine: Map<number, CommentInfo[]>): string | null {
+  const comment = lastCommentOnLine(diagLine, byEndLine);
+  if (comment === null || comment.type !== "Line") return null;
   const text = comment.value.trim();
   if (text.startsWith("@expect")) return null;
   return text;
@@ -97,10 +85,8 @@ function collectAnnotation(
   byEndLine: Map<number, CommentInfo[]>,
   source: string,
 ): string | null {
-  const commentsOnLine = byEndLine.get(commentEndLine);
-  if (commentsOnLine === undefined || commentsOnLine.length === 0) return null;
-  const comment = commentsOnLine.at(-1);
-  if (comment === undefined) return null;
+  const comment = lastCommentOnLine(commentEndLine, byEndLine);
+  if (comment === null) return null;
 
   if (comment.type === "Block") return cleanBlockComment(comment.value);
 

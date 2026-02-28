@@ -2,32 +2,7 @@ import * as ts from "typescript";
 import type { Diagnostic, TSRule, TSVisitContext } from "../rules/types.ts";
 import { isNullableType, isFromNodeModules } from "./utils.ts";
 
-export function runTSRules(
-  rules: TSRule[],
-  sourceFile: ts.SourceFile,
-  checker: ts.TypeChecker,
-  source: string,
-  filename: string,
-): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-
-  const contexts = rules.map((rule) => ({
-    rule,
-    ctx: buildContext(rule, sourceFile, checker, source, filename, diagnostics),
-  }));
-
-  function visit(node: ts.Node): void {
-    for (const { rule, ctx } of contexts) {
-      rule.visit(node, ctx);
-    }
-    ts.forEachChild(node, visit);
-  }
-
-  visit(sourceFile);
-  return diagnostics;
-}
-
-function buildContext(
+export function buildContext(
   rule: TSRule,
   sourceFile: ts.SourceFile,
   checker: ts.TypeChecker,

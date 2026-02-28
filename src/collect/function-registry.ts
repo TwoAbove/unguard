@@ -1,4 +1,6 @@
 import type * as ts from "typescript";
+import { DualHashRegistry } from "./base-registry.ts";
+import { getExportedNameCollisions } from "./type-registry.ts";
 
 export interface ParamInfo {
   name: string;
@@ -12,32 +14,33 @@ export interface FunctionEntry {
   file: string;
   line: number;
   hash: string;
+  normalizedHash: string;
   params: ParamInfo[];
   node: ts.Node;
   exported: boolean;
   symbol?: ts.Symbol;
+  /** Whitespace-normalized body text length (for trivial-body filtering) */
+  bodyLength: number;
+  /** Fully-normalized body text length (strings/numbers/params replaced) */
+  normalizedBodyLength: number;
+  /** Class name for class methods (e.g. "Foo" for "Foo.bar"), undefined for standalone functions */
+  className?: string;
+  /** True if the declaring class has an `implements` clause */
+  implementsInterface?: boolean;
 }
 
-export class FunctionRegistry {
-  private entries: FunctionEntry[] = [];
-  private byHash = new Map<string, FunctionEntry[]>();
-
+export class FunctionRegistry extends DualHashRegistry<FunctionEntry> {
   add(entry: FunctionEntry): void {
-    this.entries.push(entry);
-    let list = this.byHash.get(entry.hash);
-    if (list === undefined) {
-      list = [];
-      this.byHash.set(entry.hash, list);
-    }
-    list.push(entry);
+    this.addWithSecondary(entry, entry.hash, entry.normalizedHash);
   }
 
-  getDuplicateGroups(): FunctionEntry[][] {
-    return [...this.byHash.values()].filter((group) => group.length > 1);
-  }
-
-  getAll(): FunctionEntry[] {
-    return this.entries;
+  getNearDuplicateGroups(): FunctionEntry[][] {
+    return this.getSecondaryDuplicateGroups().filter((group) => {
+      // Exclude groups where all entries share the same exact hash
+      // (those are already caught by duplicate-function-declaration)
+      const hashes = new Set(group.map((e) => e.hash));
+      return hashes.size > 1;
+    });
   }
 
   getByName(name: string): FunctionEntry[] {
@@ -45,20 +48,6 @@ export class FunctionRegistry {
   }
 
   getNameCollisionGroups(): FunctionEntry[][] {
-    const byName = new Map<string, FunctionEntry[]>();
-    for (const entry of this.entries) {
-      if (!entry.exported) continue;
-      let list = byName.get(entry.name);
-      if (list === undefined) {
-        list = [];
-        byName.set(entry.name, list);
-      }
-      list.push(entry);
-    }
-    return [...byName.values()].filter((group) => {
-      if (group.length < 2) return false;
-      const files = new Set(group.map((e) => e.file));
-      return files.size > 1;
-    });
+    return getExportedNameCollisions(this.entries);
   }
 }

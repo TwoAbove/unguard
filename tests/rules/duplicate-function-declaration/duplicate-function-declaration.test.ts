@@ -10,4 +10,16 @@ describe("duplicate-function-declaration", () => {
   it("flags identical function bodies across files", () => {
     assertCrossFileInvalid(duplicateFunctionDeclaration, new URL("./invalid", import.meta.url).pathname);
   });
+
+  it("allows class methods with different bodies", () => {
+    assertCrossFileValid(duplicateFunctionDeclaration, new URL("./valid-methods", import.meta.url).pathname);
+  });
+
+  it("flags class method with identical body to standalone function", () => {
+    assertCrossFileInvalid(duplicateFunctionDeclaration, new URL("./invalid-methods", import.meta.url).pathname);
+  });
+
+  it("flags identical function bodies in same file", () => {
+    assertCrossFileInvalid(duplicateFunctionDeclaration, new URL("./invalid-same-file", import.meta.url).pathname);
+  });
 });

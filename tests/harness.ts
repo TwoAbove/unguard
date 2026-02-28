@@ -3,17 +3,13 @@ import fg from "fast-glob";
 import { expect } from "vitest";
 import type { CrossFileRule, TSRule, Diagnostic } from "../src/rules/types.ts";
 import { collectProject } from "../src/collect/index.ts";
-import { runTSRules } from "../src/typecheck/walk.ts";
 import { createProgramFromFiles } from "../src/typecheck/program.ts";
 
 /** Run a TS rule against a fixture file with full type checking. */
 function runTSRule(rule: TSRule, fixturePath: string): Diagnostic[] {
-  const source = readFileSync(fixturePath, "utf8");
   const program = createProgramFromFiles([fixturePath]);
-  const checker = program.getTypeChecker();
-  const sourceFile = program.getSourceFile(fixturePath);
-  if (!sourceFile) throw new Error(`Could not get source file for ${fixturePath}`);
-  return runTSRules([rule], sourceFile, checker, source, fixturePath);
+  const { diagnostics } = collectProject(program, [rule]);
+  return diagnostics;
 }
 
 /** Parse `// @expect <rule-id>` annotations from source. Returns set of 1-based line numbers. */
@@ -60,7 +56,7 @@ function collectFixtureFiles(dir: string): string[] {
 export function runCrossFileRule(rule: CrossFileRule, fixtureDir: string): Diagnostic[] {
   const files = collectFixtureFiles(fixtureDir);
   const program = createProgramFromFiles(files);
-  const index = collectProject(program);
+  const { index } = collectProject(program);
   return rule.analyze(index);
 }
 

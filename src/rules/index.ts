@@ -12,7 +12,7 @@ import { noLogicalOrFallback } from "./ts/no-logical-or-fallback.ts";
 import { noNullTernaryNormalization } from "./ts/no-null-ternary-normalization.ts";
 import { noAnyCast } from "./ts/no-any-cast.ts";
 import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
-import { noInlineTypeInParams } from "./ts/no-inline-type-in-params.ts";
+import { duplicateInlineTypeInParams } from "./cross-file/duplicate-inline-type-in-params.ts";
 import { noTypeAssertion } from "./ts/no-type-assertion.ts";
 import { noRedundantExistenceGuard } from "./ts/no-redundant-existence-guard.ts";
 import { preferDefaultParamValue } from "./ts/prefer-default-param-value.ts";
@@ -25,7 +25,13 @@ import { noErrorRewrap } from "./ts/no-error-rewrap.ts";
 import { explicitNullArg } from "./cross-file/explicit-null-arg.ts";
 import { duplicateFunctionName } from "./cross-file/duplicate-function-name.ts";
 import { duplicateTypeName } from "./cross-file/duplicate-type-name.ts";
+import { duplicateConstantDeclaration } from "./cross-file/duplicate-constant-declaration.ts";
 import { noDynamicImport } from "./ts/no-dynamic-import.ts";
+import { nearDuplicateFunction } from "./cross-file/near-duplicate-function.ts";
+import { trivialWrapper } from "./cross-file/trivial-wrapper.ts";
+import { unusedExport } from "./cross-file/unused-export.ts";
+import { duplicateFile } from "./cross-file/duplicate-file.ts";
+import { duplicateStatementSequence } from "./cross-file/duplicate-statement-sequence.ts";
 
 export type RuleCategory =
   | "type-evasion"
@@ -53,7 +59,7 @@ export const allRules: Rule[] = [
   noNullTernaryNormalization,
   noAnyCast,
   noExplicitAnyAnnotation,
-  noInlineTypeInParams,
+  duplicateInlineTypeInParams,
   noTypeAssertion,
   noRedundantExistenceGuard,
   preferDefaultParamValue,
@@ -66,7 +72,13 @@ export const allRules: Rule[] = [
   explicitNullArg,
   duplicateFunctionName,
   duplicateTypeName,
+  duplicateConstantDeclaration,
   noDynamicImport,
+  nearDuplicateFunction,
+  trivialWrapper,
+  unusedExport,
+  duplicateFile,
+  duplicateStatementSequence,
 ];
 
 const ruleMetadata: Record<string, RuleMetadata> = {
@@ -89,7 +101,7 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "no-catch-return": { category: "error-handling", tags: ["safety"] },
   "no-error-rewrap": { category: "error-handling", tags: ["safety"] },
 
-  "no-inline-type-in-params": { category: "interface-design", tags: ["api"] },
+  "duplicate-inline-type-in-params": { category: "cross-file", tags: ["duplicate", "api"] },
   "prefer-default-param-value": { category: "interface-design", tags: ["api"] },
   "prefer-required-param-with-guard": { category: "interface-design", tags: ["api"] },
 
@@ -97,10 +109,17 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "duplicate-type-name": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-function-declaration": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-function-name": { category: "cross-file", tags: ["duplicate"] },
+  "duplicate-constant-declaration": { category: "cross-file", tags: ["duplicate"] },
   "optional-arg-always-used": { category: "cross-file", tags: ["api"] },
   "explicit-null-arg": { category: "cross-file", tags: ["api"] },
 
   "no-dynamic-import": { category: "imports", tags: ["safety"] },
+
+  "near-duplicate-function": { category: "cross-file", tags: ["duplicate"] },
+  "trivial-wrapper": { category: "cross-file", tags: ["duplicate"] },
+  "unused-export": { category: "cross-file", tags: ["api"] },
+  "duplicate-file": { category: "cross-file", tags: ["duplicate"] },
+  "duplicate-statement-sequence": { category: "cross-file", tags: ["duplicate"] },
 };
 
 export function getRuleMetadata(ruleId: string): RuleMetadata {

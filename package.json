@@ -1,6 +1,6 @@
 {
   "name": "unguard",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Detect overdefensive AI-generated code",
   "author": "Seva Maltsev <me@seva.dev> (https://seva.dev)",
   "license": "MIT",
@@ -40,8 +40,8 @@
     "lint": "npm run lint:biome",
     "test": "vitest run",
     "test:watch": "vitest",
-    "scan": "node ./bin/unguard.mjs scan src \"tests/**/*.test.ts\" tests/harness.ts --fail-on=error",
-    "scan:strict": "node ./bin/unguard.mjs scan src \"tests/**/*.test.ts\" tests/harness.ts --strict --fail-on=error",
+    "scan": "node ./bin/unguard.mjs scan",
+    "scan:strict": "node ./bin/unguard.mjs scan --strict",
     "prepublishOnly": "npm run build && npm run test"
   },
   "engines": {

@@ -10,7 +10,7 @@ npm run lint:biome     # biome lint for source + tests (without fixtures)
 npm run test           # vitest run
 npm run test:watch     # vitest
 npm run typecheck      # tsc --noEmit
-npm run scan           # run unguard on src + maintained tests with fail-on=error
+npm run scan           # run unguard on src via unguard.config.json (fail-on=error)
 ```
 
 CLI: `node bin/unguard.mjs scan [paths] [--config <path>] [--strict] [--filter <rule-id>] [--rule <selector=severity>] [--ignore <glob>] [--severity=<levels>] [--fail-on=<none|error|warning|info>] [--format=grouped|flat]`
@@ -45,8 +45,10 @@ Other key files:
 - `src/typecheck/program.ts` — tsconfig discovery, `ts.Program` creation
 - `src/typecheck/walk.ts` — TS AST walker, `TSVisitContext`, `runTSRules()`
 - `src/typecheck/utils.ts` — shared type helpers (`isNullableType`, `includesNumberType`, etc.)
-- `src/collect/index.ts` — `collectProject(program)`, builds `ProjectIndex`
+- `src/collect/index.ts` — `collectProject(program)`, builds `ProjectIndex` (types, functions, constants, callSites, imports, fileHashes, statementSequences, inlineParamTypes)
+- `src/collect/base-registry.ts` — `BaseRegistry<T>` and `DualHashRegistry<T>` base classes
 - `src/rules/index.ts` — rule registry + rule metadata catalog (`category`, `tags`)
+- `src/utils/hash.ts` — hashing: `hashTypeShape`, `hashFunctionBody`, `normalizeBody`, `normalizeText`
 
 ## Writing rules
 

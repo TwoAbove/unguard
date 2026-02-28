@@ -22,7 +22,7 @@ function setup(files: Record<string, string>): string[] {
 function collect(files: Record<string, string>) {
   const paths = setup(files);
   const program = createProgramFromFiles(paths);
-  return collectProject(program);
+  return collectProject(program).index;
 }
 
 afterAll(() => {
@@ -85,6 +85,34 @@ describe("FunctionRegistry", () => {
     expect(index.functions.getByName("add")).toHaveLength(1);
   });
 
+  it("collects function expressions", () => {
+    const index = collect({
+      "a.ts": "const add = function(a: number, b: number) { return a + b; };",
+    });
+    expect(index.functions.getByName("add")).toHaveLength(1);
+  });
+
+  it("collects class methods", () => {
+    const index = collect({
+      "a.ts": "class Calculator { add(a: number, b: number) { return a + b; } }",
+    });
+    expect(index.functions.getByName("Calculator.add")).toHaveLength(1);
+  });
+
+  it("collects object property arrow functions", () => {
+    const index = collect({
+      "a.ts": "const obj = { add: (a: number, b: number) => a + b };",
+    });
+    expect(index.functions.getByName("add")).toHaveLength(1);
+  });
+
+  it("collects object property function expressions", () => {
+    const index = collect({
+      "a.ts": "const obj = { add: function(a: number, b: number) { return a + b; } };",
+    });
+    expect(index.functions.getByName("add")).toHaveLength(1);
+  });
+
   it("tracks optional params", () => {
     const index = collect({
       "a.ts": "function greet(name: string, greeting?: string) { return greeting + name; }",
@@ -95,6 +123,138 @@ describe("FunctionRegistry", () => {
     expect(greetFn).toBeDefined();
     expect(greetFn?.params).toHaveLength(2);
     expect(greetFn?.params[1]?.optional).toBe(true);
+  });
+});
+
+describe("ConstantRegistry", () => {
+  it("detects duplicate constant values across files", () => {
+    const index = collect({
+      "a.ts": 'const TIMEOUT = 3000;',
+      "b.ts": 'const DELAY = 3000;',
+    });
+    const dupes = index.constants.getDuplicateGroups();
+    expect(dupes.length).toBeGreaterThan(0);
+    const [firstGroup] = dupes;
+    expect(firstGroup).toBeDefined();
+    expect(firstGroup?.length).toBe(2);
+  });
+
+  it("does not flag different constant values", () => {
+    const index = collect({
+      "a.ts": 'const TIMEOUT = 3000;',
+      "b.ts": 'const DELAY = 5000;',
+    });
+    expect(index.constants.getDuplicateGroups()).toHaveLength(0);
+  });
+
+  it("collects string literals", () => {
+    const index = collect({
+      "a.ts": 'const URL = "https://example.com";',
+    });
+    expect(index.constants.getAll()).toHaveLength(1);
+    expect(index.constants.getAll()[0]?.valueText).toBe('"https://example.com"');
+  });
+
+  it("collects negative numbers", () => {
+    const index = collect({
+      "a.ts": "const NEG = -1;",
+    });
+    expect(index.constants.getAll()).toHaveLength(1);
+  });
+
+  it("collects binary expressions of literals", () => {
+    const index = collect({
+      "a.ts": "const HOURS = 6 * 60 * 60;",
+    });
+    expect(index.constants.getAll()).toHaveLength(1);
+  });
+
+  it("skips arrow functions", () => {
+    const index = collect({
+      "a.ts": "const fn = () => 42;",
+    });
+    expect(index.constants.getAll()).toHaveLength(0);
+  });
+
+  it("skips object literals", () => {
+    const index = collect({
+      "a.ts": "const obj = { x: 1 };",
+    });
+    expect(index.constants.getAll()).toHaveLength(0);
+  });
+
+  it("skips call expressions", () => {
+    const index = collect({
+      "a.ts": "const val = someFunc();",
+    });
+    expect(index.constants.getAll()).toHaveLength(0);
+  });
+});
+
+describe("AnonymousFunctions", () => {
+  it("collects anonymous arrow function passed as call argument", () => {
+    const index = collect({
+      "a.ts": `
+        declare function register(cb: (x: string) => string): void;
+        register((input: string) => {
+          const trimmed = input.trim();
+          const lower = trimmed.toLowerCase();
+          return lower.replace(/\\s+/g, "-") + trimmed;
+        });
+      `,
+    });
+    const fns = index.functions.getAll().filter((f) => f.name.startsWith("register."));
+    expect(fns).toHaveLength(1);
+    expect(fns[0]?.name).toBe("register.$arg0");
+  });
+
+  it("skips small anonymous functions", () => {
+    const index = collect({
+      "a.ts": `
+        declare const items: number[];
+        items.map((x) => x + 1);
+      `,
+    });
+    const fns = index.functions.getAll().filter((f) => f.name.includes("map."));
+    expect(fns).toHaveLength(0);
+  });
+
+  it("does not double-collect named arrow functions", () => {
+    const index = collect({
+      "a.ts": "const add = (a: number, b: number) => { return a + b; };",
+    });
+    expect(index.functions.getByName("add")).toHaveLength(1);
+  });
+
+  it("derives name from grandparent PropertyAssignment", () => {
+    const index = collect({
+      "a.ts": `
+        declare function createEffect(opts: Record<string, (x: string) => string>): void;
+        const obj = {
+          handler: createEffect((input: string) => {
+            const trimmed = input.trim();
+            const lower = trimmed.toLowerCase();
+            return lower.replace(/\\s+/g, "-") + trimmed;
+          }),
+        };
+      `,
+    });
+    // The grandparent is PropertyAssignment "handler"
+    // But createEffect is the parent call — grandparent is PropertyAssignment
+    const fns = index.functions.getAll().filter((f) => f.name === "handler");
+    expect(fns).toHaveLength(1);
+  });
+});
+
+describe("NearDuplicates", () => {
+  it("groups near-duplicates by normalized hash", () => {
+    const index = collect({
+      "a.ts": 'function greetEn(name: string) { return "Hello " + name; }',
+      "b.ts": 'function greetEs(name: string) { return "Hola " + name; }',
+    });
+    expect(index.functions.getNearDuplicateGroups().length).toBeGreaterThan(0);
+    // But exact duplicates should NOT appear in near-duplicate groups
+    expect(index.functions.getDuplicateGroups()).toHaveLength(0);
   });
 });
 
