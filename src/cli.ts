@@ -12,6 +12,7 @@ interface UnguardConfig {
   ignore?: string[];
   rules?: RulePolicy;
   failOn?: FailOn;
+  severity?: Severity[];
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -80,7 +81,7 @@ export async function main(argv: string[]): Promise<number> {
     rules: values.filter ? [values.filter] : undefined,
     ignore: ignore.length > 0 ? ignore : undefined,
     rulePolicy: rulePolicy.length > 0 ? rulePolicy : undefined,
-    showSeverities: severityFiltersResult.value.length > 0 ? severityFiltersResult.value : undefined,
+    showSeverities: severityFiltersResult.value.length > 0 ? severityFiltersResult.value : config?.severity,
     failOn: failOnResult.value,
   });
 
@@ -296,6 +297,13 @@ function loadConfig(path: string): UnguardConfig {
       throw new Error(`Invalid config in ${basename(path)}: "failOn" must be one of none, error, warning, info.`);
     }
     config.failOn = raw.failOn;
+  }
+
+  if (raw.severity !== undefined) {
+    if (!isStringArray(raw.severity) || !raw.severity.every(isSeverity)) {
+      throw new Error(`Invalid config in ${basename(path)}: "severity" must be an array of error, warning, info.`);
+    }
+    config.severity = raw.severity as Severity[];
   }
 
   if (raw.rules !== undefined) {
