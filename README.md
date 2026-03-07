@@ -165,6 +165,7 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 | `unused-export` | info | Exported function with no usages in the project |
 | `optional-arg-always-used` | warning | Optional param provided at every call site |
 | `explicit-null-arg` | warning | `fn(null)` / `fn(undefined)` to project functions |
+| `dead-overload` | warning | Overload signature with zero matching project call sites |
 
 ### Imports
 

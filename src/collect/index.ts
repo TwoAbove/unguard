@@ -36,6 +36,7 @@ export interface CallSite {
   argCount: number;
   node: ts.CallExpression;
   symbol?: ts.Symbol;
+  resolvedDeclaration?: ts.SignatureDeclaration | ts.JSDocSignature;
 }
 
 export interface ImportEntry {
@@ -409,11 +410,14 @@ function collectCallSites(node: ts.Node, file: string, sourceFile: ts.SourceFile
     const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
     // Resolve the symbol the call refers to (follows imports to the declaration)
     let symbol: ts.Symbol | undefined;
+    let resolvedDeclaration: ts.SignatureDeclaration | ts.JSDocSignature | undefined;
     try {
       symbol = checker.getSymbolAtLocation(node.expression);
       if (symbol && (symbol.flags & ts.SymbolFlags.Alias)) {
         symbol = checker.getAliasedSymbol(symbol);
       }
+      const signature = checker.getResolvedSignature(node);
+      resolvedDeclaration = signature?.declaration;
     } catch {
       // Symbol resolution can fail on synthetic nodes
     }
@@ -424,6 +428,7 @@ function collectCallSites(node: ts.Node, file: string, sourceFile: ts.SourceFile
       argCount: node.arguments.length,
       node,
       symbol,
+      resolvedDeclaration,
     });
   }
 }

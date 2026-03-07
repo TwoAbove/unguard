@@ -282,4 +282,21 @@ describe("CallSites", () => {
     expect(methodCall).toBeDefined();
     expect(methodCall?.argCount).toBe(3);
   });
+
+  it("records the overload declaration selected for a call site", () => {
+    const index = collect({
+      "a.ts": [
+        "function parse(value: string): string;",
+        "function parse(value: number): number;",
+        "function parse(value: string | number): string | number { return value; }",
+        'parse("x");',
+        "parse(1);",
+      ].join("\n"),
+    });
+
+    const parseCalls = index.callSites.filter((c) => c.calleeName === "parse");
+    expect(parseCalls).toHaveLength(2);
+    expect(parseCalls[0]?.resolvedDeclaration?.getText()).toContain("value: string");
+    expect(parseCalls[1]?.resolvedDeclaration?.getText()).toContain("value: number");
+  });
 });

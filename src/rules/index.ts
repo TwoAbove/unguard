@@ -33,6 +33,7 @@ import { trivialWrapper } from "./cross-file/trivial-wrapper.ts";
 import { unusedExport } from "./cross-file/unused-export.ts";
 import { duplicateFile } from "./cross-file/duplicate-file.ts";
 import { duplicateStatementSequence } from "./cross-file/duplicate-statement-sequence.ts";
+import { deadOverload } from "./cross-file/dead-overload.ts";
 
 export type RuleCategory =
   | "type-evasion"
@@ -81,6 +82,7 @@ export const allRules: Rule[] = [
   unusedExport,
   duplicateFile,
   duplicateStatementSequence,
+  deadOverload,
 ];
 
 const ruleMetadata: Record<string, RuleMetadata> = {
@@ -123,6 +125,7 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "unused-export": { category: "cross-file", tags: ["api"] },
   "duplicate-file": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-statement-sequence": { category: "cross-file", tags: ["duplicate"] },
+  "dead-overload": { category: "cross-file", tags: ["api", "type-evasion"] },
 };
 
 export function getRuleMetadata(ruleId: string): RuleMetadata {
