@@ -7,7 +7,7 @@ describe("no-type-assertion", () => {
     assertValid(noTypeAssertion, new URL("./valid.ts", import.meta.url).pathname);
   });
 
-  it("flags as Type casts", () => {
+  it("flags double assertions through unknown", () => {
     assertInvalid(noTypeAssertion, new URL("./invalid.ts", import.meta.url).pathname);
   });
 });

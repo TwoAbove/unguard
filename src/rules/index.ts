@@ -13,6 +13,7 @@ import { noNullTernaryNormalization } from "./ts/no-null-ternary-normalization.t
 import { noAnyCast } from "./ts/no-any-cast.ts";
 import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
 import { duplicateInlineTypeInParams } from "./cross-file/duplicate-inline-type-in-params.ts";
+import { noInlineTypeAssertion } from "./ts/no-inline-type-assertion.ts";
 import { noTypeAssertion } from "./ts/no-type-assertion.ts";
 import { noRedundantExistenceGuard } from "./ts/no-redundant-existence-guard.ts";
 import { preferDefaultParamValue } from "./ts/prefer-default-param-value.ts";
@@ -60,6 +61,7 @@ export const allRules: Rule[] = [
   noAnyCast,
   noExplicitAnyAnnotation,
   duplicateInlineTypeInParams,
+  noInlineTypeAssertion,
   noTypeAssertion,
   noRedundantExistenceGuard,
   preferDefaultParamValue,
@@ -84,6 +86,7 @@ export const allRules: Rule[] = [
 const ruleMetadata: Record<string, RuleMetadata> = {
   "no-any-cast": { category: "type-evasion", tags: ["safety"] },
   "no-explicit-any-annotation": { category: "type-evasion", tags: ["safety"] },
+  "no-inline-type-assertion": { category: "type-evasion", tags: ["safety"] },
   "no-type-assertion": { category: "type-evasion", tags: ["safety"] },
   "no-ts-ignore": { category: "type-evasion", tags: ["safety"] },
 

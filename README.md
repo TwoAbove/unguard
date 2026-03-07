@@ -113,6 +113,7 @@ src/lib/probe.ts:37:4 error [no-empty-catch] Empty catch blocks hide failures...
 | ---- | -------- | --------------- |
 | `no-any-cast` | error | `x as any` |
 | `no-explicit-any-annotation` | error | `param: any`, `const x: any` |
+| `no-inline-type-assertion` | error | `x as { ... }`, `<{ ... }>x` |
 | `no-type-assertion` | error | `x as unknown as T` |
 | `no-ts-ignore` | error | `@ts-ignore` / `@ts-expect-error` |
 

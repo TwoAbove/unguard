@@ -46,6 +46,17 @@ function isTupleSlotDefinitelyPresent(type: ts.Type, index: number, checker: ts.
   }
 
   const apparent = checker.getApparentType(type);
-  if (!checker.isTupleType(apparent)) return false;
+  if (!isTupleTypeReference(apparent, checker)) return false;
   return index < apparent.target.minLength;
+}
+
+function isTupleTypeReference(type: ts.Type, checker: ts.TypeChecker): type is ts.TupleTypeReference {
+  if (!checker.isTupleType(type)) return false;
+  if (!("target" in type)) return false;
+
+  const target = type.target;
+  if (typeof target !== "object" || target === null) return false;
+  if (!("minLength" in target)) return false;
+
+  return typeof target.minLength === "number";
 }
