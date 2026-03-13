@@ -83,4 +83,29 @@ describe("engine", () => {
     });
     expect(tagResult.diagnostics).toHaveLength(0);
   });
+
+  it("suppresses warning diagnostics with @unguard comments", async () => {
+    const result = await scan({
+      paths: ["tests/fixtures/unguard-warning.ts"],
+      rules: ["no-module-state-write"],
+    });
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("suppresses info diagnostics with @unguard comments", async () => {
+    const result = await scan({
+      paths: ["tests/fixtures/unguard-info.ts"],
+      rules: ["no-double-negation-coercion"],
+    });
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("does not suppress error diagnostics with @unguard comments", async () => {
+    const result = await scan({
+      paths: ["tests/fixtures/unguard-error.ts"],
+      rules: ["no-any-cast"],
+    });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.severity).toBe("error");
+  });
 });

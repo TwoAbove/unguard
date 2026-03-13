@@ -18,6 +18,8 @@ import { noTypeAssertion } from "./ts/no-type-assertion.ts";
 import { noRedundantExistenceGuard } from "./ts/no-redundant-existence-guard.ts";
 import { preferDefaultParamValue } from "./ts/prefer-default-param-value.ts";
 import { preferRequiredParamWithGuard } from "./ts/prefer-required-param-with-guard.ts";
+import { noInlineParamType } from "./ts/no-inline-param-type.ts";
+import { noModuleStateWrite } from "./ts/no-module-state-write.ts";
 import { duplicateTypeDeclaration } from "./cross-file/duplicate-type-declaration.ts";
 import { duplicateFunctionDeclaration } from "./cross-file/duplicate-function-declaration.ts";
 import { optionalArgAlwaysUsed } from "./cross-file/optional-arg-always-used.ts";
@@ -40,6 +42,7 @@ export type RuleCategory =
   | "defensive-code"
   | "error-handling"
   | "interface-design"
+  | "state-management"
   | "cross-file"
   | "imports";
 
@@ -67,6 +70,8 @@ export const allRules: Rule[] = [
   noRedundantExistenceGuard,
   preferDefaultParamValue,
   preferRequiredParamWithGuard,
+  noInlineParamType,
+  noModuleStateWrite,
   duplicateTypeDeclaration,
   duplicateFunctionDeclaration,
   optionalArgAlwaysUsed,
@@ -109,6 +114,8 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "duplicate-inline-type-in-params": { category: "cross-file", tags: ["duplicate", "api"] },
   "prefer-default-param-value": { category: "interface-design", tags: ["api"] },
   "prefer-required-param-with-guard": { category: "interface-design", tags: ["api"] },
+  "no-inline-param-type": { category: "interface-design", tags: ["api"] },
+  "no-module-state-write": { category: "state-management", tags: ["state"] },
 
   "duplicate-type-declaration": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-type-name": { category: "cross-file", tags: ["duplicate"] },

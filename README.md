@@ -148,6 +148,12 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 | `prefer-default-param-value` | info | Optional param reassigned with `??` in the body |
 | `prefer-required-param-with-guard` | info | `arg?: T` followed by `if (!arg) throw` |
 
+### State management
+
+| Rule | Severity | What it catches |
+| ---- | -------- | --------------- |
+| `no-module-state-write` | warning | Function mutates a module-scope binding (`count++`, `state.ready = ...`, `cache.set(...)`) |
+
 ### Cross-file analysis
 
 | Rule | Severity | What it catches |
@@ -185,6 +191,15 @@ type AnyNode = Record<string, any>;
 ```txt
 file.ts:2:31 error Explicit `any` annotation ... (intentional escape hatch for untyped AST access)
 ```
+
+For `warning` and `info` diagnostics, you can explicitly mark a finding as intentional with `@unguard <rule-id>` on the same line or immediately above:
+
+```typescript
+// @unguard no-module-state-write module cache is intentional in this adapter
+cache.set(user.id, user);
+```
+
+`@unguard` never suppresses `error` diagnostics.
 
 ## API
 
