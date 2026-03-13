@@ -75,7 +75,7 @@ export const myRule: TSRule = {
 };
 ```
 
-Register in `src/rules/index.ts`.
+Register in `src/rules/index.ts`. Add to the appropriate table in `README.md`.
 
 #### TSVisitContext
 

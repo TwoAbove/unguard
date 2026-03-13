@@ -145,6 +145,7 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
+| `no-inline-param-type` | warning | `(params: { id: string; ... })` — inline object type on parameter |
 | `prefer-default-param-value` | info | Optional param reassigned with `??` in the body |
 | `prefer-required-param-with-guard` | info | `arg?: T` followed by `if (!arg) throw` |
 
