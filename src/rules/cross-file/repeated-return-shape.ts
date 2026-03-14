@@ -44,20 +44,20 @@ export const repeatedReturnShape: CrossFileRule = {
       if (unique.length < THRESHOLD) continue;
 
       const sorted = unique.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
-      for (const entry of sorted) {
-        const others = sorted
-          .filter((e) => e !== entry)
-          .map((e) => `${e.functionName} (${e.file}:${e.line})`)
-          .join(", ");
-        diagnostics.push({
-          ruleId: this.id,
-          severity: this.severity,
-          message: `${unique.length} functions return shape {${entry.props.join(", ")}}; consider a shared return type (${others})`,
-          file: entry.file,
-          line: entry.line,
-          column: 1,
-        });
-      }
+      const first = sorted[0];
+      if (first === undefined) continue;
+      const others = sorted
+        .slice(1)
+        .map((e) => `${e.functionName} (${e.file}:${e.line})`)
+        .join(", ");
+      diagnostics.push({
+        ruleId: this.id,
+        severity: this.severity,
+        message: `${unique.length} functions return shape {${first.props.join(", ")}}; consider a shared return type (${others})`,
+        file: first.file,
+        line: first.line,
+        column: 1,
+      });
     }
 
     return diagnostics;
@@ -130,7 +130,7 @@ function addShape(
   shapeMap: Map<string, ReturnShapeEntry[]>,
 ): void {
   const props = extractPropertyNames(objLiteral);
-  if (props === null || props.length === 0) return;
+  if (props === null || props.length < 2) return;
   const { sorted, list } = getShapeGroup(shapeMap, props);
   list.push({ file, line: funcLine, functionName, props: sorted });
 }

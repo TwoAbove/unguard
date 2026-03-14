@@ -1,9 +1,12 @@
 import * as ts from "typescript";
 import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 
+const MODULE_SCOPE = -1;
+
 interface LiteralOccurrence {
   line: number;
   isAsConst: boolean;
+  scopeId: number;
 }
 
 export const repeatedLiteralProperty: CrossFileRule = {
@@ -29,7 +32,8 @@ export const repeatedLiteralProperty: CrossFileRule = {
               valueMap.set(result.literalText, list);
             }
             const line = ts.getLineAndCharacterOfPosition(sourceFile, prop.getStart(sourceFile)).line + 1;
-            list.push({ line, isAsConst: result.isAsConst });
+            const scopeId = findEnclosingFunctionStart(prop, sourceFile);
+            list.push({ line, isAsConst: result.isAsConst, scopeId });
           }
         }
         ts.forEachChild(node, visit);
@@ -38,30 +42,45 @@ export const repeatedLiteralProperty: CrossFileRule = {
 
       for (const [value, occurrences] of valueMap) {
         const hasAsConst = occurrences.some((o) => o.isAsConst);
+        // Deduplicate by scope — count distinct functions, not raw occurrences
+        const uniqueScopes = new Set(occurrences.map((o) => o.scopeId));
         const threshold = hasAsConst ? 3 : 5;
-        if (occurrences.length < threshold) continue;
+        if (uniqueScopes.size < threshold) continue;
 
         const sorted = [...occurrences].sort((a, b) => a.line - b.line);
-        for (const occ of sorted) {
-          const otherLines = sorted
-            .filter((o) => o !== occ)
-            .map((o) => o.line)
-            .join(", ");
-          diagnostics.push({
-            ruleId: this.id,
-            severity: this.severity,
-            message: `${JSON.stringify(value)}${hasAsConst ? " as const" : ""} repeated ${occurrences.length} times as property value (also at lines ${otherLines})`,
-            file,
-            line: occ.line,
-            column: 1,
-          });
-        }
+        const first = sorted[0];
+        if (first === undefined) continue;
+        const otherLines = sorted.slice(1).map((o) => o.line).join(", ");
+        diagnostics.push({
+          ruleId: this.id,
+          severity: this.severity,
+          message: `${JSON.stringify(value)}${hasAsConst ? " as const" : ""} repeated across ${uniqueScopes.size} scopes as property value (also at lines ${otherLines})`,
+          file,
+          line: first.line,
+          column: 1,
+        });
       }
     }
 
     return diagnostics;
   },
 };
+
+function findEnclosingFunctionStart(node: ts.Node, sourceFile: ts.SourceFile): number {
+  let current = node.parent;
+  while (current) {
+    if (
+      ts.isFunctionDeclaration(current) ||
+      ts.isFunctionExpression(current) ||
+      ts.isArrowFunction(current) ||
+      ts.isMethodDeclaration(current)
+    ) {
+      return current.getStart(sourceFile);
+    }
+    current = current.parent;
+  }
+  return MODULE_SCOPE;
+}
 
 function extractLiteral(
   node: ts.Node,
