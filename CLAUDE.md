@@ -44,7 +44,8 @@ Orchestration entrypoints:
 Other key files:
 - `src/typecheck/program.ts` — tsconfig discovery, `ts.Program` creation
 - `src/typecheck/walk.ts` — TS AST walker, `TSVisitContext`, `runTSRules()`
-- `src/typecheck/utils.ts` — shared type helpers (`isNullableType`, `includesNumberType`, etc.)
+- `src/typecheck/utils.ts` — shared type helpers (`isNullableType`, `includesNumberType`, `isInlineParamType`, `getFirstFunctionStatement`, etc.)
+- `src/rules/cross-file/object-shape.ts` — shared helpers for object literal shape analysis (`extractPropertyNames`, `getShapeGroup`)
 - `src/collect/index.ts` — `collectProject(program)`, builds `ProjectIndex` (types, functions, constants, callSites, imports, fileHashes, statementSequences, inlineParamTypes)
 - `src/collect/base-registry.ts` — `BaseRegistry<T>` and `DualHashRegistry<T>` base classes
 - `src/rules/index.ts` — rule registry + rule metadata catalog (`category`, `tags`)
@@ -99,6 +100,8 @@ Rules live in `src/rules/cross-file/`. Each exports a `CrossFileRule` with `anal
 | `x!` | `ts.isNonNullExpression(node)` |
 | `x as T` | `ts.isAsExpression(node)` |
 | `catch (e) {}` | `ts.isCatchClause(node)`, `node.block.statements` |
+| `x as const` | `ts.isAsExpression(node)`, `node.type.getText(sf) === "const"` |
+| `{ k: v }` | `ts.isObjectLiteralExpression(node)`, `ts.isPropertyAssignment(prop)` |
 | Comments | `ts.getLeadingCommentRanges(source, node.getFullStart())` |
 
 ## Testing rules
@@ -151,4 +154,5 @@ describe("my-rule", () => {
 
 - ESM only. No CJS.
 - Dogfood: `npm run scan` must report 0 issues.
+- CLI uses `dist/` — run `npm run build` before testing via `bin/unguard.mjs`.
 - Test every rule with both valid and invalid fixtures.

@@ -148,6 +148,8 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 | `no-inline-param-type` | warning | `(params: { id: string; ... })` — inline object type on parameter |
 | `prefer-default-param-value` | info | Optional param reassigned with `??` in the body |
 | `prefer-required-param-with-guard` | info | `arg?: T` followed by `if (!arg) throw` |
+| `repeated-literal-property` | warning | Same literal value (`as const`: 3+, plain: 5+) repeated in object properties within a file |
+| `repeated-return-shape` | warning | 3+ functions return object literals with the same property name set |
 
 ### State management
 

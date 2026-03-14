@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
-import { getFunctionBodyStatements } from "../../typecheck/utils.ts";
+import { getFirstFunctionStatement } from "../../typecheck/utils.ts";
 
 export const preferDefaultParamValue: TSRule = {
   kind: "ts",
@@ -9,12 +9,11 @@ export const preferDefaultParamValue: TSRule = {
   message: "Use a default parameter value instead of reassigning from nullish coalescing inside the body",
 
   visit(node: ts.Node, ctx: TSVisitContext) {
-    const result = getFunctionBodyStatements(node);
+    const result = getFirstFunctionStatement(node);
     if (result === null) return;
-    const { statements: stmts, fn } = result;
+    const { firstStmt, fn } = result;
 
-    const firstStmt = stmts[0];
-    if (firstStmt === undefined || !ts.isExpressionStatement(firstStmt)) return;
+    if (!ts.isExpressionStatement(firstStmt)) return;
     const expr = firstStmt.expression;
     if (!ts.isBinaryExpression(expr) || expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return;
 

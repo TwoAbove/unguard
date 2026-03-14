@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
-import { getFunctionBodyStatements } from "../../typecheck/utils.ts";
+import { getFirstFunctionStatement } from "../../typecheck/utils.ts";
 
 export const preferRequiredParamWithGuard: TSRule = {
   kind: "ts",
@@ -9,12 +9,11 @@ export const preferRequiredParamWithGuard: TSRule = {
   message: "Optional param with immediate guard (if (!param) return/throw); make it required instead",
 
   visit(node: ts.Node, ctx: TSVisitContext) {
-    const result = getFunctionBodyStatements(node);
+    const result = getFirstFunctionStatement(node);
     if (result === null) return;
-    const { statements: stmts, fn } = result;
+    const { firstStmt, fn } = result;
 
-    const firstStmt = stmts[0];
-    if (firstStmt === undefined || !ts.isIfStatement(firstStmt)) return;
+    if (!ts.isIfStatement(firstStmt)) return;
 
     const test = firstStmt.expression;
     let guardedName: string | null = null;

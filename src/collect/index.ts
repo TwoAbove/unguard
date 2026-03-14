@@ -8,6 +8,7 @@ import { StatementSequenceRegistry, type StatementSequenceEntry } from "./statem
 import { InlineParamTypeRegistry } from "./inline-type-registry.ts";
 import type { Diagnostic, TSRule } from "../rules/types.ts";
 import { buildContext } from "../typecheck/walk.ts";
+import { isInlineParamType } from "../typecheck/utils.ts";
 
 export interface CommentInfo {
   type: "Line" | "Block";
@@ -390,12 +391,9 @@ function collectInlineParamTypes(
   sourceFile: ts.SourceFile,
   registry: InlineParamTypeRegistry,
 ): void {
-  if (!ts.isTypeLiteralNode(node)) return;
-  const parent = node.parent;
-  if (!parent || !ts.isParameter(parent)) return;
-  if (parent.type !== node) return;
+  if (!isInlineParamType(node)) return;
   const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
-  registry.add(file, line, node, sourceFile);
+  registry.add(file, line, node as ts.TypeLiteralNode, sourceFile);
 }
 
 function collectCallSites(node: ts.Node, file: string, sourceFile: ts.SourceFile, checker: ts.TypeChecker, sites: CallSite[]): void {
@@ -439,35 +437,24 @@ export function collectAllComments(sourceFile: ts.SourceFile): CommentInfo[] {
   const source = sourceFile.getFullText();
   const seen = new Set<number>();
 
+  function addRanges(ranges: ts.CommentRange[] | undefined): void {
+    if (!ranges) return;
+    for (const r of ranges) {
+      if (seen.has(r.pos)) continue;
+      seen.add(r.pos);
+      const isLine = r.kind === ts.SyntaxKind.SingleLineCommentTrivia;
+      comments.push({
+        type: isLine ? "Line" : "Block",
+        value: source.slice(r.pos + 2, isLine ? r.end : r.end - 2),
+        start: r.pos,
+        end: r.end,
+      });
+    }
+  }
+
   function visit(node: ts.Node): void {
-    const leading = ts.getLeadingCommentRanges(source, node.getFullStart());
-    if (leading) {
-      for (const r of leading) {
-        if (seen.has(r.pos)) continue;
-        seen.add(r.pos);
-        const isLine = r.kind === ts.SyntaxKind.SingleLineCommentTrivia;
-        comments.push({
-          type: isLine ? "Line" : "Block",
-          value: source.slice(r.pos + 2, isLine ? r.end : r.end - 2),
-          start: r.pos,
-          end: r.end,
-        });
-      }
-    }
-    const trailing = ts.getTrailingCommentRanges(source, node.getEnd());
-    if (trailing) {
-      for (const r of trailing) {
-        if (seen.has(r.pos)) continue;
-        seen.add(r.pos);
-        const isLine = r.kind === ts.SyntaxKind.SingleLineCommentTrivia;
-        comments.push({
-          type: isLine ? "Line" : "Block",
-          value: source.slice(r.pos + 2, isLine ? r.end : r.end - 2),
-          start: r.pos,
-          end: r.end,
-        });
-      }
-    }
+    addRanges(ts.getLeadingCommentRanges(source, node.getFullStart()));
+    addRanges(ts.getTrailingCommentRanges(source, node.getEnd()));
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);

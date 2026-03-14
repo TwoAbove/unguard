@@ -46,3 +46,18 @@ export function getFunctionBodyStatements(node: ts.Node): { statements: ts.NodeA
   if (node.body.statements.length === 0) return null;
   return { statements: node.body.statements, fn: node };
 }
+
+export function getFirstFunctionStatement(node: ts.Node): { firstStmt: ts.Statement; fn: FunctionLike } | null {
+  const result = getFunctionBodyStatements(node);
+  if (result === null) return null;
+  const firstStmt = result.statements[0];
+  if (firstStmt === undefined) return null;
+  return { firstStmt, fn: result.fn };
+}
+
+export function isInlineParamType(node: ts.Node): boolean {
+  if (!ts.isTypeLiteralNode(node)) return false;
+  const parent = node.parent;
+  if (!parent || !ts.isParameter(parent)) return false;
+  return parent.type === node;
+}

@@ -1,41 +1,44 @@
 import type { Rule } from "./types.ts";
 
-import { noEmptyCatch } from "./ts/no-empty-catch.ts";
-import { noNonNullAssertion } from "./ts/no-non-null-assertion.ts";
-import { noDoubleNegationCoercion } from "./ts/no-double-negation-coercion.ts";
-import { noTsIgnore } from "./ts/no-ts-ignore.ts";
-import { noNullishCoalescing } from "./ts/no-nullish-coalescing.ts";
-import { noOptionalCall } from "./ts/no-optional-call.ts";
-import { noOptionalPropertyAccess } from "./ts/no-optional-property-access.ts";
-import { noOptionalElementAccess } from "./ts/no-optional-element-access.ts";
-import { noLogicalOrFallback } from "./ts/no-logical-or-fallback.ts";
-import { noNullTernaryNormalization } from "./ts/no-null-ternary-normalization.ts";
-import { noAnyCast } from "./ts/no-any-cast.ts";
-import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
-import { duplicateInlineTypeInParams } from "./cross-file/duplicate-inline-type-in-params.ts";
-import { noInlineTypeAssertion } from "./ts/no-inline-type-assertion.ts";
-import { noTypeAssertion } from "./ts/no-type-assertion.ts";
-import { noRedundantExistenceGuard } from "./ts/no-redundant-existence-guard.ts";
-import { preferDefaultParamValue } from "./ts/prefer-default-param-value.ts";
-import { preferRequiredParamWithGuard } from "./ts/prefer-required-param-with-guard.ts";
-import { noInlineParamType } from "./ts/no-inline-param-type.ts";
-import { noModuleStateWrite } from "./ts/no-module-state-write.ts";
-import { duplicateTypeDeclaration } from "./cross-file/duplicate-type-declaration.ts";
-import { duplicateFunctionDeclaration } from "./cross-file/duplicate-function-declaration.ts";
-import { optionalArgAlwaysUsed } from "./cross-file/optional-arg-always-used.ts";
-import { noCatchReturn } from "./ts/no-catch-return.ts";
-import { noErrorRewrap } from "./ts/no-error-rewrap.ts";
-import { explicitNullArg } from "./cross-file/explicit-null-arg.ts";
-import { duplicateFunctionName } from "./cross-file/duplicate-function-name.ts";
-import { duplicateTypeName } from "./cross-file/duplicate-type-name.ts";
+import { deadOverload } from "./cross-file/dead-overload.ts";
 import { duplicateConstantDeclaration } from "./cross-file/duplicate-constant-declaration.ts";
-import { noDynamicImport } from "./ts/no-dynamic-import.ts";
+import { duplicateFile } from "./cross-file/duplicate-file.ts";
+import { duplicateFunctionDeclaration } from "./cross-file/duplicate-function-declaration.ts";
+import { duplicateFunctionName } from "./cross-file/duplicate-function-name.ts";
+import { duplicateInlineTypeInParams } from "./cross-file/duplicate-inline-type-in-params.ts";
+import { duplicateStatementSequence } from "./cross-file/duplicate-statement-sequence.ts";
+import { duplicateTypeDeclaration } from "./cross-file/duplicate-type-declaration.ts";
+import { duplicateTypeName } from "./cross-file/duplicate-type-name.ts";
+import { explicitNullArg } from "./cross-file/explicit-null-arg.ts";
 import { nearDuplicateFunction } from "./cross-file/near-duplicate-function.ts";
+import { optionalArgAlwaysUsed } from "./cross-file/optional-arg-always-used.ts";
+import { repeatedLiteralProperty } from "./cross-file/repeated-literal-property.ts";
+// import { repeatedObjectShape } from "./cross-file/repeated-object-shape.ts";
+import { repeatedReturnShape } from "./cross-file/repeated-return-shape.ts";
 import { trivialWrapper } from "./cross-file/trivial-wrapper.ts";
 import { unusedExport } from "./cross-file/unused-export.ts";
-import { duplicateFile } from "./cross-file/duplicate-file.ts";
-import { duplicateStatementSequence } from "./cross-file/duplicate-statement-sequence.ts";
-import { deadOverload } from "./cross-file/dead-overload.ts";
+import { noAnyCast } from "./ts/no-any-cast.ts";
+import { noCatchReturn } from "./ts/no-catch-return.ts";
+import { noDoubleNegationCoercion } from "./ts/no-double-negation-coercion.ts";
+import { noDynamicImport } from "./ts/no-dynamic-import.ts";
+import { noEmptyCatch } from "./ts/no-empty-catch.ts";
+import { noErrorRewrap } from "./ts/no-error-rewrap.ts";
+import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
+import { noInlineParamType } from "./ts/no-inline-param-type.ts";
+import { noInlineTypeAssertion } from "./ts/no-inline-type-assertion.ts";
+import { noLogicalOrFallback } from "./ts/no-logical-or-fallback.ts";
+import { noModuleStateWrite } from "./ts/no-module-state-write.ts";
+import { noNonNullAssertion } from "./ts/no-non-null-assertion.ts";
+import { noNullTernaryNormalization } from "./ts/no-null-ternary-normalization.ts";
+import { noNullishCoalescing } from "./ts/no-nullish-coalescing.ts";
+import { noOptionalCall } from "./ts/no-optional-call.ts";
+import { noOptionalElementAccess } from "./ts/no-optional-element-access.ts";
+import { noOptionalPropertyAccess } from "./ts/no-optional-property-access.ts";
+import { noRedundantExistenceGuard } from "./ts/no-redundant-existence-guard.ts";
+import { noTsIgnore } from "./ts/no-ts-ignore.ts";
+import { noTypeAssertion } from "./ts/no-type-assertion.ts";
+import { preferDefaultParamValue } from "./ts/prefer-default-param-value.ts";
+import { preferRequiredParamWithGuard } from "./ts/prefer-required-param-with-guard.ts";
 
 export type RuleCategory =
   | "type-evasion"
@@ -88,6 +91,9 @@ export const allRules: Rule[] = [
   duplicateFile,
   duplicateStatementSequence,
   deadOverload,
+  repeatedLiteralProperty,
+  // repeatedObjectShape — disabled: too noisy on single-property shapes, needs rethinking
+  repeatedReturnShape,
 ];
 
 const ruleMetadata: Record<string, RuleMetadata> = {
@@ -133,6 +139,10 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "duplicate-file": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-statement-sequence": { category: "cross-file", tags: ["duplicate"] },
   "dead-overload": { category: "cross-file", tags: ["api", "type-evasion"] },
+
+  "repeated-literal-property": { category: "interface-design", tags: ["duplicate", "readability"] },
+  "repeated-object-shape": { category: "interface-design", tags: ["duplicate", "readability"] },
+  "repeated-return-shape": { category: "interface-design", tags: ["duplicate", "readability"] },
 };
 
 export function getRuleMetadata(ruleId: string): RuleMetadata {

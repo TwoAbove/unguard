@@ -116,24 +116,13 @@ function collectAnnotation(
   byEndLine: Map<number, CommentInfo[]>,
   source: string,
 ): string | null {
-  const comment = lastCommentOnLine(commentEndLine, byEndLine);
-  if (comment === null) return null;
-
-  if (comment.type === "Block") return cleanBlockComment(comment.value);
-
-  const lines: string[] = [comment.value.trim()];
-  let prevLine = commentEndLine - 1;
-  for (;;) {
-    const prev = byEndLine.get(prevLine);
-    if (prev === undefined || prev.length === 0) break;
-    const prevComment = prev.at(-1);
-    if (prevComment === undefined || prevComment.type !== "Line") break;
-    if (lineAt(source, prevComment.start) !== prevLine) break;
-    lines.unshift(prevComment.value.trim());
-    prevLine--;
+  const comments = collectCommentsAbove(commentEndLine, byEndLine, source);
+  if (comments.length === 0) return null;
+  const first = comments[0];
+  if (comments.length === 1 && first !== undefined && first.type === "Block") {
+    return cleanBlockComment(first.value);
   }
-
-  return lines.join("\n");
+  return comments.map((c) => c.value.trim()).join("\n");
 }
 
 function isSatisfiedByComment(
