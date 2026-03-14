@@ -67,11 +67,9 @@ function extractLiteral(
   node: ts.Node,
   sourceFile: ts.SourceFile,
 ): { literalText: string | null; isAsConst: boolean } {
-  if (ts.isStringLiteral(node) || ts.isNumericLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
     return { literalText: node.text, isAsConst: false };
   }
-  if (node.kind === ts.SyntaxKind.TrueKeyword) return { literalText: "true", isAsConst: false };
-  if (node.kind === ts.SyntaxKind.FalseKeyword) return { literalText: "false", isAsConst: false };
 
   if (ts.isAsExpression(node) && node.type.getText(sourceFile).trim() === "const") {
     const inner = extractLiteral(node.expression, sourceFile);
