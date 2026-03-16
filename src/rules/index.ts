@@ -27,7 +27,6 @@ import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
 import { noInlineParamType } from "./ts/no-inline-param-type.ts";
 import { noInlineTypeAssertion } from "./ts/no-inline-type-assertion.ts";
 import { noLogicalOrFallback } from "./ts/no-logical-or-fallback.ts";
-import { noModuleStateWrite } from "./ts/no-module-state-write.ts";
 import { noNonNullAssertion } from "./ts/no-non-null-assertion.ts";
 import { noNullTernaryNormalization } from "./ts/no-null-ternary-normalization.ts";
 import { noNullishCoalescing } from "./ts/no-nullish-coalescing.ts";
@@ -45,7 +44,6 @@ export type RuleCategory =
   | "defensive-code"
   | "error-handling"
   | "interface-design"
-  | "state-management"
   | "cross-file"
   | "imports";
 
@@ -74,7 +72,6 @@ export const allRules: Rule[] = [
   preferDefaultParamValue,
   preferRequiredParamWithGuard,
   noInlineParamType,
-  noModuleStateWrite,
   duplicateTypeDeclaration,
   duplicateFunctionDeclaration,
   optionalArgAlwaysUsed,
@@ -121,8 +118,6 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "prefer-default-param-value": { category: "interface-design", tags: ["api"] },
   "prefer-required-param-with-guard": { category: "interface-design", tags: ["api"] },
   "no-inline-param-type": { category: "interface-design", tags: ["api"] },
-  "no-module-state-write": { category: "state-management", tags: ["state"] },
-
   "duplicate-type-declaration": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-type-name": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-function-declaration": { category: "cross-file", tags: ["duplicate"] },

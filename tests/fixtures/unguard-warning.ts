@@ -1,6 +1,4 @@
-const cache = new Map<string, string>();
+declare const value: string | null;
 
-export function remember(value: string): void {
-  // @unguard no-module-state-write module cache is intentional in this adapter
-  cache.set(value, value);
-}
+// @unguard no-nullish-coalescing intentional fallback in this adapter
+const result = value ?? "default";

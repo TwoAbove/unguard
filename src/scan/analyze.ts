@@ -1,20 +1,23 @@
 import { collectProject, type CommentInfo } from "../collect/index.ts";
 import { isTSRule } from "../rules/types.ts";
 import type { CrossFileRule, Diagnostic, Rule } from "../rules/types.ts";
-import { createProgramFromFiles } from "../typecheck/program.ts";
+import { createProgramFromFiles, resolveProjectFiles } from "../typecheck/program.ts";
 
 export function analyzeFiles(files: string[], rules: Rule[]): Diagnostic[] {
   const tsRules = rules.filter(isTSRule);
   const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
 
-  const program = files.length > 0 ? createProgramFromFiles(files) : null;
+  const projectFiles = resolveProjectFiles(files);
+  const program = projectFiles.length > 0 ? createProgramFromFiles(projectFiles) : null;
   if (!program) return [];
 
   const allowedFiles = new Set(files);
   const { index, diagnostics } = collectProject(program, tsRules, allowedFiles);
 
   for (const rule of crossFileRules) {
-    diagnostics.push(...rule.analyze(index));
+    const ruleDiagnostics = rule.analyze(index);
+    // Cross-file rules may see the full project but only report for scanned files
+    diagnostics.push(...ruleDiagnostics.filter((d) => allowedFiles.has(d.file)));
   }
 
   return finalizeDiagnostics(diagnostics, index.files);

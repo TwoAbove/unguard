@@ -87,7 +87,7 @@ describe("engine", () => {
   it("suppresses warning diagnostics with @unguard comments", async () => {
     const result = await scan({
       paths: ["tests/fixtures/unguard-warning.ts"],
-      rules: ["no-module-state-write"],
+      rules: ["no-nullish-coalescing"],
     });
     expect(result.diagnostics).toHaveLength(0);
   });

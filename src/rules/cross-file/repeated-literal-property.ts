@@ -7,6 +7,7 @@ interface LiteralOccurrence {
   line: number;
   isAsConst: boolean;
   scopeId: number;
+  key: string;
 }
 
 export const repeatedLiteralProperty: CrossFileRule = {
@@ -33,7 +34,10 @@ export const repeatedLiteralProperty: CrossFileRule = {
             }
             const line = ts.getLineAndCharacterOfPosition(sourceFile, prop.getStart(sourceFile)).line + 1;
             const scopeId = findEnclosingFunctionStart(prop, sourceFile);
-            list.push({ line, isAsConst: result.isAsConst, scopeId });
+            const key = ts.isIdentifier(prop.name) ? prop.name.text
+              : ts.isStringLiteral(prop.name) ? prop.name.text
+              : "";
+            list.push({ line, isAsConst: result.isAsConst, scopeId, key });
           }
         }
         ts.forEachChild(node, visit);
@@ -41,6 +45,10 @@ export const repeatedLiteralProperty: CrossFileRule = {
       ts.forEachChild(sourceFile, visit);
 
       for (const [value, occurrences] of valueMap) {
+        // All occurrences on the same property key = discriminant pattern, not a DRY violation
+        const uniqueKeys = new Set(occurrences.map((o) => o.key).filter((k) => k !== ""));
+        if (uniqueKeys.size === 1) continue;
+
         const hasAsConst = occurrences.some((o) => o.isAsConst);
         // Deduplicate by scope — count distinct functions, not raw occurrences
         const uniqueScopes = new Set(occurrences.map((o) => o.scopeId));

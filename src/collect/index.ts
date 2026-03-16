@@ -65,19 +65,26 @@ export function collectProject(
 
   for (const sourceFile of program.getSourceFiles()) {
     const file = sourceFile.fileName;
-    // Skip declaration files, node_modules, and files not in the discovered set
     if (sourceFile.isDeclarationFile) continue;
     if (file.includes("node_modules")) continue;
-    if (allowedFiles && !allowedFiles.has(file)) continue;
 
+    const isReportable = !allowedFiles || allowedFiles.has(file);
     const source = sourceFile.getFullText();
-    const comments = collectAllComments(sourceFile);
-    fileMap.set(file, { source, sourceFile, comments });
 
-    const ruleContexts = tsRules?.map((rule) => ({
-      rule,
-      ctx: buildContext(rule, sourceFile, checker, source, file, diagnostics),
-    }));
+    // Always collect cross-file data (types, functions, call sites, imports)
+    // from all program files for complete analysis context.
+    // Only run TS rules and include in fileMap for reportable (scanned) files.
+    if (isReportable) {
+      const comments = collectAllComments(sourceFile);
+      fileMap.set(file, { source, sourceFile, comments });
+    }
+
+    const ruleContexts = isReportable
+      ? tsRules?.map((rule) => ({
+          rule,
+          ctx: buildContext(rule, sourceFile, checker, source, file, diagnostics),
+        }))
+      : undefined;
 
     function visit(node: ts.Node): void {
       collectTypes(node, file, sourceFile, types);

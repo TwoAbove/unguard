@@ -1,6 +1,7 @@
 import * as ts from "typescript";
 import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 import { extractPropertyNames, getShapeGroup } from "./object-shape.ts";
+import type { TypeEntry } from "../../collect/type-registry.ts";
 
 interface ReturnShapeEntry {
   file: string;
@@ -21,7 +22,7 @@ export const repeatedReturnShape: CrossFileRule = {
 
     for (const [file, { sourceFile }] of project.files) {
       function visit(node: ts.Node): void {
-        if (isFunctionLike(node)) {
+        if (isFunctionLike(node) && !isCallbackArgument(node)) {
           const functionName = deriveFunctionName(node, sourceFile);
           const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
           collectReturnShapes(node, file, line, functionName, sourceFile, shapeMap);
@@ -31,7 +32,10 @@ export const repeatedReturnShape: CrossFileRule = {
       ts.forEachChild(sourceFile, visit);
     }
 
-    for (const [, entries] of shapeMap) {
+    const knownTypeShapes = buildKnownTypeShapes(project.types.getAll());
+
+    for (const [shapeKey, entries] of shapeMap) {
+      if (knownTypeShapes.has(shapeKey)) continue;
       // Deduplicate: one entry per function (same file + line)
       const byFunction = new Map<string, ReturnShapeEntry>();
       for (const entry of entries) {
@@ -42,6 +46,11 @@ export const repeatedReturnShape: CrossFileRule = {
       }
       const unique = [...byFunction.values()];
       if (unique.length < THRESHOLD) continue;
+
+      // Same-file repetition is visible and likely intentional (protocol/framework pattern).
+      // Only flag shapes that span multiple files — that's where the developer can't see the duplication.
+      const uniqueFiles = new Set(unique.map((e) => e.file));
+      if (uniqueFiles.size < 2) continue;
 
       const sorted = unique.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
       const first = sorted[0];
@@ -133,6 +142,47 @@ function addShape(
   if (props === null || props.length < 2) return;
   const { sorted, list } = getShapeGroup(shapeMap, props);
   list.push({ file, line: funcLine, functionName, props: sorted });
+}
+
+function isCallbackArgument(node: ts.Node): boolean {
+  let current: ts.Node = node;
+  if (ts.isParenthesizedExpression(current.parent)) {
+    current = current.parent;
+  }
+  const parent = current.parent;
+  if (!ts.isCallExpression(parent)) return false;
+  return parent.arguments.some((arg) => arg === current);
+}
+
+function buildKnownTypeShapes(typeEntries: TypeEntry[]): Set<string> {
+  const shapes = new Set<string>();
+  for (const entry of typeEntries) {
+    const props = extractTypePropertyNames(entry.node);
+    if (props && props.length >= 2) {
+      shapes.add([...props].sort().join("\0"));
+    }
+  }
+  return shapes;
+}
+
+function extractTypePropertyNames(node: ts.Node): string[] | null {
+  let members: ts.NodeArray<ts.TypeElement> | undefined;
+  if (ts.isTypeLiteralNode(node)) {
+    members = node.members;
+  } else if (ts.isInterfaceDeclaration(node)) {
+    members = node.members;
+  }
+  if (!members) return null;
+
+  const names: string[] = [];
+  for (const member of members) {
+    if (ts.isPropertySignature(member) && member.name) {
+      if (ts.isIdentifier(member.name)) names.push(member.name.text);
+      else if (ts.isStringLiteral(member.name)) names.push(member.name.text);
+      else return null;
+    }
+  }
+  return names.length > 0 ? names : null;
 }
 
 function deriveFunctionName(node: ts.Node, sourceFile: ts.SourceFile): string {

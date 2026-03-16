@@ -24,3 +24,18 @@ const h = "standalone";
 const i = "standalone";
 const j = "standalone";
 const k = "standalone";
+
+// Discriminant pattern — same value always on same key (suppressed)
+function ok1() { return { _tag: "Ok" as const, data: 1 }; }
+function ok2() { return { _tag: "Ok" as const, data: 2 }; }
+function ok3() { return { _tag: "Ok" as const, data: 3 }; }
+function ok4() { return { _tag: "Ok" as const, data: 4 }; }
+function ok5() { return { _tag: "Ok" as const, data: 5 }; }
+
+// Plain discriminant — same value always on same key
+function t1() { return { type: "text", value: 1 }; }
+function t2() { return { type: "text", value: 2 }; }
+function t3() { return { type: "text", value: 3 }; }
+function t4() { return { type: "text", value: 4 }; }
+function t5() { return { type: "text", value: 5 }; }
+function t6() { return { type: "text", value: 6 }; }

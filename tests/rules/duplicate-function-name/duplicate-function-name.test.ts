@@ -10,4 +10,8 @@ describe("duplicate-function-name", () => {
   it("flags same exported function name across files", () => {
     assertCrossFileInvalid(duplicateFunctionName, new URL("./invalid", import.meta.url).pathname);
   });
+
+  it("allows same exported name in separate packages", () => {
+    assertCrossFileValid(duplicateFunctionName, new URL("./valid-separate-packages", import.meta.url).pathname);
+  });
 });

@@ -1,15 +1,8 @@
-// 4 functions returning shape {_tag, data} — reported once at first occurrence
-function getOk1() { // @expect repeated-return-shape
+// 2 functions returning shape {_tag, data} in this file
+function getOk1() {
   return { _tag: "Ok", data: 1 };
 }
 
 function getOk2() {
   return { _tag: "Ok", data: 2 };
 }
-
-function getOk3() {
-  return { _tag: "Ok", data: 3 };
-}
-
-// Arrow function with expression body also counts
-const getOk4 = () => ({ _tag: "Ok", data: 4 });
