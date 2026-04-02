@@ -146,7 +146,11 @@ function getCommentCandidates(
 ): CommentInfo[] {
   const inline = byEndLine.get(diagLine) ?? [];
   const above = collectCommentsAbove(diagLine - 1, byEndLine, source);
-  return [...inline, ...above];
+  // Also check the line immediately below (inside a block body).
+  // Formatters like Biome/Prettier enforce `} catch {` on one line,
+  // forcing suppression comments into the block where they end up on diagLine + 1.
+  const below = byEndLine.get(diagLine + 1) ?? [];
+  return [...inline, ...above, ...below];
 }
 
 function collectCommentsAbove(

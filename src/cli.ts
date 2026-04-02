@@ -15,6 +15,7 @@ interface UnguardConfig {
   severity?: Severity[];
 }
 
+// @unguard unused-export CLI entry point
 export async function main(argv: string[]): Promise<number> {
   const rawArgs = argv.slice(2);
   const userArgs = rawArgs[0] === "scan" ? rawArgs.slice(1) : rawArgs;

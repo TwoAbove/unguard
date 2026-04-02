@@ -100,6 +100,14 @@ describe("engine", () => {
     expect(result.diagnostics).toHaveLength(0);
   });
 
+  it("suppresses diagnostics with @unguard comment inside block body (K&R formatting)", async () => {
+    const result = await scan({
+      paths: ["tests/fixtures/unguard-catch-inside.ts"],
+      rules: ["no-catch-return"],
+    });
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
   it("does not suppress error diagnostics with @unguard comments", async () => {
     const result = await scan({
       paths: ["tests/fixtures/unguard-error.ts"],
