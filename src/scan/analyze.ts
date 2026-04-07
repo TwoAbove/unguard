@@ -1,26 +1,39 @@
 import { collectProject, type CommentInfo } from "../collect/index.ts";
 import { isTSRule } from "../rules/types.ts";
 import type { CrossFileRule, Diagnostic, Rule } from "../rules/types.ts";
-import { createProgramFromFiles, resolveProjectFiles } from "../typecheck/program.ts";
+import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup } from "../typecheck/program.ts";
 
 export function analyzeFiles(files: string[], rules: Rule[]): Diagnostic[] {
   const tsRules = rules.filter(isTSRule);
   const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
 
-  const projectFiles = resolveProjectFiles(files);
-  const program = projectFiles.length > 0 ? createProgramFromFiles(projectFiles) : null;
-  if (!program) return [];
+  const groupConfigs = mergeCompatibleGroups(groupFilesByTsconfig(files));
+  if (groupConfigs.length === 0) return [];
 
-  const allowedFiles = new Set(files);
-  const { index, diagnostics } = collectProject(program, tsRules, allowedFiles);
+  const allDiagnostics: Diagnostic[] = [];
+  const allFiles = new Map<string, { source: string; comments: CommentInfo[] }>();
+  const allowedAll = new Set(files);
 
-  for (const rule of crossFileRules) {
-    const ruleDiagnostics = rule.analyze(index);
-    // Cross-file rules may see the full project but only report for scanned files
-    diagnostics.push(...ruleDiagnostics.filter((d) => allowedFiles.has(d.file)));
+  // Process each tsconfig group sequentially so only one ts.Program is alive
+  // at a time. Strip AST references when copying file data to allow GC of the
+  // previous program before the next one is created.
+  for (const groupConfig of groupConfigs) {
+    const program = createProgramForGroup(groupConfig, { expandProjectFiles: true });
+    const allowed = new Set(groupConfig.scanFiles);
+    const { index, diagnostics } = collectProject(program, tsRules, allowed);
+    allDiagnostics.push(...diagnostics);
+
+    for (const rule of crossFileRules) {
+      const ruleDiags = rule.analyze(index);
+      allDiagnostics.push(...ruleDiags.filter((d) => allowedAll.has(d.file)));
+    }
+
+    for (const [k, v] of index.files) {
+      allFiles.set(k, { source: v.source, comments: v.comments });
+    }
   }
 
-  return finalizeDiagnostics(diagnostics, index.files);
+  return finalizeDiagnostics(allDiagnostics, allFiles);
 }
 
 function dedupeDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {

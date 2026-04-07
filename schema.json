@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "unguard configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "paths": {
+      "description": "Paths to scan. Defaults to current directory.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "ignore": {
+      "description": "Glob patterns to ignore.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "rules": {
+      "description": "Rule severity overrides. Keys are selectors (rule id, wildcard, category:<name>, tag:<name>).",
+      "type": "object",
+      "additionalProperties": {
+        "enum": ["off", "info", "warning", "error"]
+      }
+    },
+    "failOn": {
+      "description": "Exit threshold. Process exits non-zero when diagnostics meet this severity.",
+      "enum": ["none", "info", "warning", "error"],
+      "default": "info"
+    },
+    "severity": {
+      "description": "Filter output to these severity levels.",
+      "type": "array",
+      "items": {
+        "enum": ["info", "warning", "error"]
+      },
+      "uniqueItems": true
+    }
+  }
+}

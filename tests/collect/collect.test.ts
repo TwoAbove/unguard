@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { collectProject } from "../../src/collect/index.ts";
-import { createProgramFromFiles } from "../../src/typecheck/program.ts";
+import { groupFilesByTsconfig, createProgramForGroup } from "../../src/typecheck/program.ts";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,8 +21,9 @@ function setup(files: Record<string, string>): string[] {
 
 function collect(files: Record<string, string>) {
   const paths = setup(files);
-  const program = createProgramFromFiles(paths);
-  return collectProject(program).index;
+  const [group] = groupFilesByTsconfig(paths);
+  if (!group) throw new Error("No program group created");
+  return collectProject(createProgramForGroup(group, {})).index;
 }
 
 afterAll(() => {

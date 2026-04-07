@@ -1,6 +1,6 @@
 {
   "name": "unguard",
-  "version": "0.13.5",
+  "version": "0.13.7",
   "description": "Detect overdefensive AI-generated code",
   "author": "Seva Maltsev <me@seva.dev> (https://seva.dev)",
   "license": "MIT",
@@ -31,7 +31,8 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "schema.json"
   ],
   "scripts": {
     "build": "tsup",

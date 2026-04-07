@@ -46,6 +46,7 @@ Add `unguard` to your lint check, especially if code is written by AI.
 
 ```json
 {
+  "$schema": "./node_modules/unguard/schema.json",
   "paths": ["src", "apps/web/src"],
   "ignore": ["**/*.gen.ts", "**/routeTree.gen.ts"],
   "rules": {

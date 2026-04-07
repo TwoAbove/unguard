@@ -3,11 +3,13 @@ import fg from "fast-glob";
 import { expect } from "vitest";
 import type { CrossFileRule, TSRule, Diagnostic } from "../src/rules/types.ts";
 import { collectProject } from "../src/collect/index.ts";
-import { createProgramFromFiles } from "../src/typecheck/program.ts";
+import { groupFilesByTsconfig, createProgramForGroup } from "../src/typecheck/program.ts";
 
 /** Run a TS rule against a fixture file with full type checking. */
 function runTSRule(rule: TSRule, fixturePath: string): Diagnostic[] {
-  const program = createProgramFromFiles([fixturePath]);
+  const [group] = groupFilesByTsconfig([fixturePath]);
+  if (!group) return [];
+  const program = createProgramForGroup(group, {});
   const { diagnostics } = collectProject(program, [rule]);
   return diagnostics;
 }
@@ -55,7 +57,9 @@ function collectFixtureFiles(dir: string): string[] {
 /** Run a cross-file rule against a directory of fixtures, return diagnostics. */
 export function runCrossFileRule(rule: CrossFileRule, fixtureDir: string): Diagnostic[] {
   const files = collectFixtureFiles(fixtureDir);
-  const program = createProgramFromFiles(files);
+  const [group] = groupFilesByTsconfig(files);
+  if (!group) return [];
+  const program = createProgramForGroup(group, {});
   const { index } = collectProject(program);
   return rule.analyze(index);
 }
