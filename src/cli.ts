@@ -304,7 +304,7 @@ function loadConfig(path: string): UnguardConfig {
     if (!isStringArray(raw.severity) || !raw.severity.every(isSeverity)) {
       throw new Error(`Invalid config in ${basename(path)}: "severity" must be an array of error, warning, info.`);
     }
-    config.severity = raw.severity as Severity[];
+    config.severity = raw.severity;
   }
 
   if (raw.rules !== undefined) {

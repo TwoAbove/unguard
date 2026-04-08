@@ -253,7 +253,7 @@ function collectFunctions(node: ts.Node, file: string, sourceFile: ts.SourceFile
       // Already collected above
     }
     else {
-      const body = ts.isArrowFunction(node) ? node.body : (node as ts.FunctionExpression).body;
+      const body = ts.isArrowFunction(node) ? node.body : node.body;
       if (body) {
         const MIN_ANON_BODY = 64;
         if (bodyTextLength(body, sourceFile) >= MIN_ANON_BODY) {

@@ -5,7 +5,7 @@ export const noNullishCoalescing: TSRule = {
   kind: "ts",
   id: "no-nullish-coalescing",
   severity: "warning",
-  message: "Nullish coalescing (??) on a non-nullable type is unreachable; remove the fallback or fix the type upstream",
+  message: "Nullish coalescing (??) fallback on a non-nullable type is dead code; remove the fallback or fix the type upstream",
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;

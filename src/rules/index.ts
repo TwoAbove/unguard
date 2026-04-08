@@ -26,6 +26,9 @@ import { noErrorRewrap } from "./ts/no-error-rewrap.ts";
 import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
 import { noInlineParamType } from "./ts/no-inline-param-type.ts";
 import { noInlineTypeAssertion } from "./ts/no-inline-type-assertion.ts";
+import { noNeverCast } from "./ts/no-never-cast.ts";
+import { noRedundantCast } from "./ts/no-redundant-cast.ts";
+import { noUnvalidatedCast } from "./ts/no-unvalidated-cast.ts";
 import { noLogicalOrFallback } from "./ts/no-logical-or-fallback.ts";
 import { noNonNullAssertion } from "./ts/no-non-null-assertion.ts";
 import { noNullTernaryNormalization } from "./ts/no-null-ternary-normalization.ts";
@@ -68,6 +71,9 @@ export const allRules: Rule[] = [
   duplicateInlineTypeInParams,
   noInlineTypeAssertion,
   noTypeAssertion,
+  noNeverCast,
+  noRedundantCast,
+  noUnvalidatedCast,
   noRedundantExistenceGuard,
   preferDefaultParamValue,
   preferRequiredParamWithGuard,
@@ -99,6 +105,9 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "no-inline-type-assertion": { category: "type-evasion", tags: ["safety"] },
   "no-type-assertion": { category: "type-evasion", tags: ["safety"] },
   "no-ts-ignore": { category: "type-evasion", tags: ["safety"] },
+  "no-never-cast": { category: "type-evasion", tags: ["safety"] },
+  "no-redundant-cast": { category: "type-evasion", tags: ["type-aware"] },
+  "no-unvalidated-cast": { category: "type-evasion", tags: ["safety", "type-aware"] },
 
   "no-optional-property-access": { category: "defensive-code", tags: ["type-aware"] },
   "no-optional-element-access": { category: "defensive-code", tags: ["type-aware"] },
