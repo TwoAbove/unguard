@@ -97,13 +97,13 @@ unguard src --fail-on=error
 
 ```txt
 src/lib/probe.ts
-  37:4       error  Empty catch blocks hide failures...  no-empty-catch
+  37:4       warning  Catch swallows the error...  no-swallowed-catch
 ```
 
 **Flat** (`--format=flat`) -- one line per diagnostic, grepable:
 
 ```txt
-src/lib/probe.ts:37:4 error [no-empty-catch] Empty catch blocks hide failures...
+src/lib/probe.ts:37:4 warning [no-swallowed-catch] Catch swallows the error...
 ```
 
 ## Current Rules
@@ -128,8 +128,10 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 | `no-optional-element-access` | warning | `obj?.[key]` on a non-nullable type |
 | `no-optional-call` | warning | `fn?.()` on a non-nullable type |
 | `no-nullish-coalescing` | warning | `x ?? fallback` on a non-nullable type |
-| `no-logical-or-fallback` | warning | `map.get(k) \|\| fallback` -- data-structure lookups where `??` is correct; `\|\|` on numeric types that swallow `0` |
+| `no-logical-or-fallback` | warning | `map.get(k) \|\| fallback`, `count \|\| 1` -- `\|\|` swallows `0` and `""`; use `??` |
 | `no-null-ternary-normalization` | warning | `x == null ? fallback : x` |
+| `no-coalesce-then-guard` | warning | `const x = a ?? null; if (x == null)` -- guard re-checks the same partition the `??` just created |
+| `no-await-coalesce` | warning | `await fn() ?? fallback` -- fuses the call's failure mode into the fallback (skips `Map.get`, `Array.find`, and structural optionals) |
 | `no-non-null-assertion` | warning | `x!` on a nullable type without a local narrowing guard |
 | `no-double-negation-coercion` | info | `!!value` |
 | `no-redundant-existence-guard` | warning | `obj && obj.prop` on a non-nullable type |
@@ -138,8 +140,7 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 
 | Rule | Severity | What it catches |
 | ---- | -------- | --------------- |
-| `no-empty-catch` | error | `catch {}` with no body and no comment |
-| `no-catch-return` | warning | `catch { return fallback }` with no logging or rethrow |
+| `no-swallowed-catch` | warning | `catch (e) {}`, `catch (e) { log(e); return fallback }`, `.catch(() => fallback)` -- error neither rethrown nor surfaced in the return value |
 | `no-error-rewrap` | error | `throw new Error(e.message)` without `{ cause: e }` |
 
 ### Interface design
@@ -149,8 +150,9 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 | `no-inline-param-type` | warning | `(params: { id: string; ... })` — inline object type on parameter |
 | `prefer-default-param-value` | info | Optional param reassigned with `??` in the body |
 | `prefer-required-param-with-guard` | info | `arg?: T` followed by `if (!arg) throw` |
-| `repeated-literal-property` | warning | Same literal value (`as const`: 3+, plain: 5+) repeated in object properties within a file |
-| `repeated-return-shape` | warning | 3+ functions return object literals with the same property name set |
+| `no-defaulted-required-port-arg` | warning | `class C implements I { method(arg = x) }` where `I.method(arg)` is required -- the default widens the interface contract |
+| `repeated-literal-property` | warning | Same literal value repeated across object properties -- likely a missed constant |
+| `repeated-return-shape` | warning | Multiple functions return object literals with the same property names -- extract a shared return type |
 
 ### State management
 
@@ -164,13 +166,13 @@ These rules use the TypeScript type checker. Non-nullable types suppress the dia
 | ---- | -------- | --------------- |
 | `duplicate-type-declaration` | warning | Same type shape in multiple files |
 | `duplicate-type-name` | warning | Same exported type name, different shapes |
-| `duplicate-function-declaration` | warning | Same function body in multiple files (2+ statements) |
+| `duplicate-function-declaration` | warning | Same function body in multiple files |
 | `duplicate-function-name` | warning | Same exported function name, different bodies |
 | `duplicate-constant-declaration` | warning | Same constant value in multiple files |
-| `duplicate-inline-type-in-params` | warning | Same inline `{ ... }` param type shape repeated 2+ times |
+| `duplicate-inline-type-in-params` | warning | Same inline `{ ... }` param type repeated across signatures |
 | `duplicate-file` | warning | File with identical content to another file |
-| `near-duplicate-function` | warning | Function bodies identical after normalizing params, strings, numbers, `this` |
-| `duplicate-statement-sequence` | info | Repeated contiguous statement blocks (3+ statements) |
+| `near-duplicate-function` | warning | Function bodies that match after renaming params and literals -- likely a copy-paste |
+| `duplicate-statement-sequence` | info | Repeated block of statements across functions or files |
 | `trivial-wrapper` | info | Function that delegates to another without transformation |
 | `unused-export` | info | Exported function with no usages in the project |
 | `optional-arg-always-used` | warning | Optional param provided at every call site |

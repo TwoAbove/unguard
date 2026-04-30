@@ -16,8 +16,8 @@ describe("cli", () => {
     const code = await main([
       "node",
       "unguard",
-      "tests/rules/no-empty-catch/invalid.ts",
-      "--filter=no-empty-catch",
+      "tests/rules/no-any-cast/invalid.ts",
+      "--filter=no-any-cast",
       "--severity=error,warning",
       "--format=flat",
     ]);
@@ -62,8 +62,8 @@ describe("cli", () => {
       writeFileSync(
         configPath,
         JSON.stringify({
-          paths: ["tests/rules/no-empty-catch/invalid.ts"],
-          rules: { "no-empty-catch": "off" },
+          paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+          rules: { "no-swallowed-catch": "off" },
         }),
       );
 
@@ -81,8 +81,8 @@ describe("cli", () => {
     const code = await main([
       "node",
       "unguard",
-      "tests/rules/no-empty-catch/invalid.ts",
-      "--filter=no-empty-catch",
+      "tests/rules/no-swallowed-catch/invalid.ts",
+      "--filter=no-swallowed-catch",
       "--rule=category:error-handling=warning",
       "--fail-on=error",
       "--format=flat",

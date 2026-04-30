@@ -3,29 +3,29 @@ import { scan } from "../src/engine.ts";
 
 describe("engine", () => {
   it("scans test fixtures and finds diagnostics", async () => {
-    const result = await scan({ paths: ["tests/rules/no-empty-catch/invalid.ts"] });
+    const result = await scan({ paths: ["tests/rules/no-swallowed-catch/invalid.ts"] });
     expect(result.diagnostics.length).toBeGreaterThan(0);
     const [firstDiagnostic] = result.diagnostics;
     expect(firstDiagnostic).toBeDefined();
-    expect(firstDiagnostic?.ruleId).toBe("no-empty-catch");
+    expect(firstDiagnostic?.ruleId).toBe("no-swallowed-catch");
   });
 
   it("returns 0 diagnostics for valid code", async () => {
     const result = await scan({
-      paths: ["tests/rules/no-empty-catch/valid.ts"],
-      rules: ["no-empty-catch"],
+      paths: ["tests/rules/no-swallowed-catch/valid.ts"],
+      rules: ["no-swallowed-catch"],
     });
     expect(result.diagnostics).toHaveLength(0);
   });
 
   it("promotes to errors in strict mode", async () => {
-    const result = await scan({ paths: ["tests/rules/no-empty-catch/invalid.ts"], strict: true });
+    const result = await scan({ paths: ["tests/rules/no-swallowed-catch/invalid.ts"], strict: true });
     expect(result.diagnostics.every((d) => d.severity === "error")).toBe(true);
   });
 
   it("filters by rule ID", async () => {
     const result = await scan({
-      paths: ["tests/rules/no-empty-catch/invalid.ts"],
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
       rules: ["no-any-cast"],
     });
     expect(result.diagnostics).toHaveLength(0);
@@ -33,9 +33,9 @@ describe("engine", () => {
 
   it("ignores files from custom glob patterns", async () => {
     const result = await scan({
-      paths: ["tests/rules/no-empty-catch/invalid.ts"],
-      rules: ["no-empty-catch"],
-      ignore: ["**/tests/rules/no-empty-catch/**"],
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+      rules: ["no-swallowed-catch"],
+      ignore: ["**/tests/rules/no-swallowed-catch/**"],
     });
     expect(result.fileCount).toBe(0);
     expect(result.diagnostics).toHaveLength(0);
@@ -70,15 +70,15 @@ describe("engine", () => {
 
   it("supports category and tag selectors in rule policy", async () => {
     const categoryResult = await scan({
-      paths: ["tests/rules/no-empty-catch/invalid.ts"],
-      rules: ["no-empty-catch"],
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+      rules: ["no-swallowed-catch"],
       rulePolicy: [{ selector: "category:error-handling", severity: "warning" }],
     });
     expect(categoryResult.diagnostics[0]?.severity).toBe("warning");
 
     const tagResult = await scan({
-      paths: ["tests/rules/no-empty-catch/invalid.ts"],
-      rules: ["no-empty-catch"],
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+      rules: ["no-swallowed-catch"],
       rulePolicy: [{ selector: "tag:safety", severity: "off" }],
     });
     expect(tagResult.diagnostics).toHaveLength(0);
@@ -103,7 +103,7 @@ describe("engine", () => {
   it("suppresses diagnostics with @unguard comment inside block body (K&R formatting)", async () => {
     const result = await scan({
       paths: ["tests/fixtures/unguard-catch-inside.ts"],
-      rules: ["no-catch-return"],
+      rules: ["no-swallowed-catch"],
     });
     expect(result.diagnostics).toHaveLength(0);
   });

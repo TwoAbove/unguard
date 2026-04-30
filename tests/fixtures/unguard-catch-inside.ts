@@ -2,7 +2,7 @@
 try {
   riskyOperation();
 } catch (err) {
-  // @unguard no-catch-return formatter-safe suppression
+  // @unguard no-swallowed-catch formatter-safe suppression
   return null;
 }
 

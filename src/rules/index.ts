@@ -18,10 +18,11 @@ import { repeatedReturnShape } from "./cross-file/repeated-return-shape.ts";
 import { trivialWrapper } from "./cross-file/trivial-wrapper.ts";
 import { unusedExport } from "./cross-file/unused-export.ts";
 import { noAnyCast } from "./ts/no-any-cast.ts";
-import { noCatchReturn } from "./ts/no-catch-return.ts";
+import { noAwaitCoalesce } from "./ts/no-await-coalesce.ts";
+import { noCoalesceThenGuard } from "./ts/no-coalesce-then-guard.ts";
+import { noDefaultedRequiredPortArg } from "./ts/no-defaulted-required-port-arg.ts";
 import { noDoubleNegationCoercion } from "./ts/no-double-negation-coercion.ts";
 import { noDynamicImport } from "./ts/no-dynamic-import.ts";
-import { noEmptyCatch } from "./ts/no-empty-catch.ts";
 import { noErrorRewrap } from "./ts/no-error-rewrap.ts";
 import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
 import { noInlineParamType } from "./ts/no-inline-param-type.ts";
@@ -31,6 +32,7 @@ import { noRedundantCast } from "./ts/no-redundant-cast.ts";
 import { noUnvalidatedCast } from "./ts/no-unvalidated-cast.ts";
 import { noLogicalOrFallback } from "./ts/no-logical-or-fallback.ts";
 import { noNonNullAssertion } from "./ts/no-non-null-assertion.ts";
+import { noSwallowedCatch } from "./ts/no-swallowed-catch.ts";
 import { noNullTernaryNormalization } from "./ts/no-null-ternary-normalization.ts";
 import { noNullishCoalescing } from "./ts/no-nullish-coalescing.ts";
 import { noOptionalCall } from "./ts/no-optional-call.ts";
@@ -56,7 +58,6 @@ export interface RuleMetadata {
 }
 
 export const allRules: Rule[] = [
-  noEmptyCatch,
   noNonNullAssertion,
   noDoubleNegationCoercion,
   noTsIgnore,
@@ -66,6 +67,8 @@ export const allRules: Rule[] = [
   noOptionalElementAccess,
   noLogicalOrFallback,
   noNullTernaryNormalization,
+  noCoalesceThenGuard,
+  noAwaitCoalesce,
   noAnyCast,
   noExplicitAnyAnnotation,
   duplicateInlineTypeInParams,
@@ -77,12 +80,13 @@ export const allRules: Rule[] = [
   noRedundantExistenceGuard,
   preferDefaultParamValue,
   preferRequiredParamWithGuard,
+  noDefaultedRequiredPortArg,
   noInlineParamType,
   duplicateTypeDeclaration,
   duplicateFunctionDeclaration,
   optionalArgAlwaysUsed,
-  noCatchReturn,
   noErrorRewrap,
+  noSwallowedCatch,
   explicitNullArg,
   duplicateFunctionName,
   duplicateTypeName,
@@ -115,17 +119,19 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "no-nullish-coalescing": { category: "defensive-code", tags: ["type-aware"] },
   "no-logical-or-fallback": { category: "defensive-code", tags: ["type-aware"] },
   "no-null-ternary-normalization": { category: "defensive-code", tags: ["type-aware"] },
+  "no-coalesce-then-guard": { category: "defensive-code", tags: ["readability"] },
+  "no-await-coalesce": { category: "defensive-code", tags: ["type-aware"] },
   "no-non-null-assertion": { category: "defensive-code", tags: ["type-aware"] },
   "no-double-negation-coercion": { category: "defensive-code", tags: ["readability"] },
   "no-redundant-existence-guard": { category: "defensive-code", tags: ["type-aware"] },
 
-  "no-empty-catch": { category: "error-handling", tags: ["safety"] },
-  "no-catch-return": { category: "error-handling", tags: ["safety"] },
   "no-error-rewrap": { category: "error-handling", tags: ["safety"] },
+  "no-swallowed-catch": { category: "error-handling", tags: ["safety"] },
 
   "duplicate-inline-type-in-params": { category: "cross-file", tags: ["duplicate", "api"] },
   "prefer-default-param-value": { category: "interface-design", tags: ["api"] },
   "prefer-required-param-with-guard": { category: "interface-design", tags: ["api"] },
+  "no-defaulted-required-port-arg": { category: "interface-design", tags: ["api", "type-aware"] },
   "no-inline-param-type": { category: "interface-design", tags: ["api"] },
   "duplicate-type-declaration": { category: "cross-file", tags: ["duplicate"] },
   "duplicate-type-name": { category: "cross-file", tags: ["duplicate"] },

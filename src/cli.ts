@@ -46,6 +46,7 @@ export async function main(argv: string[]): Promise<number> {
     const configPath = findConfigPath(values.config);
     config = configPath ? loadConfig(configPath) : null;
   } catch (err) {
+    // @unguard no-swallowed-catch system boundary: surface failure as exit code, not a thrown error
     const message = err instanceof Error ? err.message : String(err);
     console.error(pc.red(message));
     return 1;

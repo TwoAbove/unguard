@@ -109,10 +109,10 @@ Rules live in `src/rules/cross-file/`. Each exports a `CrossFileRule` with `anal
 Each rule has a test directory: `tests/rules/<rule-id>/`
 
 ```
-tests/rules/no-empty-catch/
+tests/rules/no-swallowed-catch/
   valid.ts                    # should NOT trigger
   invalid.ts                  # SHOULD trigger, with annotations
-  no-empty-catch.test.ts      # vitest
+  no-swallowed-catch.test.ts  # vitest
 ```
 
 Mark expected diagnostics with `// @expect <rule-id>`.
