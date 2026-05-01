@@ -6,6 +6,8 @@ export const noExplicitAnyAnnotation: TSRule = {
   id: "no-explicit-any-annotation",
   severity: "error",
   message: "Explicit `any` annotation erases type safety; use a specific type, `unknown`, or a generic",
+  syntaxKinds: [ts.SyntaxKind.AnyKeyword],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (node.kind !== ts.SyntaxKind.AnyKeyword) return;

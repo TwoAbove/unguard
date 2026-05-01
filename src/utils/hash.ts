@@ -33,50 +33,54 @@ function normalizeTypeNode(node: ts.Node, sourceFile: ts.SourceFile): string {
 }
 
 /**
- * Hash a function body for duplicate detection.
- * Normalizes whitespace.
+ * Function-body hashes and lengths used by duplicate and near-duplicate rules.
  */
-export function hashFunctionBody(node: ts.Node, sourceFile: ts.SourceFile): string {
-  const normalized = stripComments(node.getText(sourceFile));
-  return createHash("sha256").update(normalized).digest("hex").slice(0, 16);
-}
-
-/**
- * Whitespace-normalized body text length.
- * Used to filter trivially small function bodies from duplicate detection.
- */
-export function bodyTextLength(node: ts.Node, sourceFile: ts.SourceFile): number {
-  return stripComments(node.getText(sourceFile)).length;
+export interface FunctionBodyAnalysis {
+  hash: string;
+  normalizedHash: string;
+  bodyLength: number;
+  normalizedBodyLength: number;
 }
 
 function stripComments(text: string): string {
   return text.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
 }
 
-function normalizeBody(node: ts.Node, sourceFile: ts.SourceFile, paramNames: string[]): string {
-  let text = node.getText(sourceFile);
-  // Strip line comments
-  text = text.replace(/\/\/[^\n]*/g, "");
-  // Strip block comments
-  text = text.replace(/\/\*[\s\S]*?\*\//g, "");
+function normalizeBodyText(text: string, paramNames: string[]): string {
+  let normalized = text;
   // Normalize string literals (double-quoted, single-quoted, template)
-  text = text.replace(/"(?:[^"\\]|\\.)*"/g, '"__STR__"');
-  text = text.replace(/'(?:[^'\\]|\\.)*'/g, '"__STR__"');
-  text = text.replace(/`(?:[^`\\]|\\.)*`/g, '"__STR__"');
+  normalized = normalized.replace(/"(?:[^"\\]|\\.)*"/g, '"__STR__"');
+  normalized = normalized.replace(/'(?:[^'\\]|\\.)*'/g, '"__STR__"');
+  normalized = normalized.replace(/`(?:[^`\\]|\\.)*`/g, '"__STR__"');
   // Normalize numeric literals (standalone numbers, not inside identifiers)
-  text = text.replace(/\b\d+(?:\.\d+)?\b/g, "__NUM__");
+  normalized = normalized.replace(/\b\d+(?:\.\d+)?\b/g, "__NUM__");
   // Normalize parameter names to positional placeholders
   for (let i = 0; i < paramNames.length; i++) {
     const name = paramNames[i] as string;
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    text = text.replace(new RegExp(`\\b${escaped}\\b`, "g"), `$${i}`);
+    normalized = normalized.replace(new RegExp(`\\b${escaped}\\b`, "g"), `$${i}`);
   }
   // Normalize member-access objects: this.x and $N.x both become $_.x
-  text = text.replace(/\bthis\./g, "$_.");
-  text = text.replace(/\$\d+\./g, "$_.");
+  normalized = normalized.replace(/\bthis\./g, "$_.");
+  normalized = normalized.replace(/\$\d+\./g, "$_.");
   // Normalize whitespace
-  text = text.replace(/\s+/g, " ").trim();
-  return text;
+  normalized = normalized.replace(/\s+/g, " ").trim();
+  return normalized;
+}
+
+export function analyzeFunctionBody(
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  paramNames: string[],
+): FunctionBodyAnalysis {
+  const stripped = stripComments(node.getText(sourceFile));
+  const normalized = normalizeBodyText(stripped, paramNames);
+  return {
+    hash: hashText(stripped),
+    normalizedHash: hashText(normalized),
+    bodyLength: stripped.length,
+    normalizedBodyLength: normalized.length,
+  };
 }
 
 /**
@@ -103,25 +107,4 @@ export function normalizeText(text: string): string {
 
 export function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
-}
-
-export function hashFunctionBodyNormalized(
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-  paramNames: string[],
-): string {
-  const text = normalizeBody(node, sourceFile, paramNames);
-  return createHash("sha256").update(text).digest("hex").slice(0, 16);
-}
-
-/**
- * Length of fully-normalized body text (strings/numbers/params replaced).
- * Used to filter near-duplicate groups with trivial collapsed bodies.
- */
-export function normalizedBodyTextLength(
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-  paramNames: string[],
-): number {
-  return normalizeBody(node, sourceFile, paramNames).length;
 }

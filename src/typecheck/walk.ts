@@ -1,20 +1,22 @@
 import * as ts from "typescript";
-import type { Diagnostic, TSRule, TSVisitContext } from "../rules/types.ts";
+import type { Diagnostic, SemanticServices, TSRule, TSVisitContext } from "../rules/types.ts";
 import { isNullableType, isFromNodeModules } from "./utils.ts";
 
 export function buildContext(
   rule: TSRule,
   sourceFile: ts.SourceFile,
-  checker: ts.TypeChecker,
+  semantics: SemanticServices,
   source: string,
   filename: string,
   diagnostics: Diagnostic[],
 ): TSVisitContext {
+  const checker = semantics.checker;
   return {
     filename,
     source,
     sourceFile,
     checker,
+    semantics,
 
     report(node: ts.Node, message?: string) {
       const { line, character } = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile));
@@ -41,12 +43,12 @@ export function buildContext(
     },
 
     isNullable(node: ts.Node): boolean {
-      const type = checker.getTypeAtLocation(node);
+      const type = semantics.typeAtLocation(node);
       return isNullableType(checker, type);
     },
 
     isExternal(node: ts.Node): boolean {
-      const type = checker.getTypeAtLocation(node);
+      const type = semantics.typeAtLocation(node);
       const symbol = type.getSymbol();
       if (!symbol) return false;
       const declarations = symbol.getDeclarations();

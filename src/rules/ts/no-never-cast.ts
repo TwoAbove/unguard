@@ -7,6 +7,8 @@ export const noNeverCast: TSRule = {
   severity: "warning",
   message:
     "Casting to `never` silences the type checker completely; use a specific type or a type guard",
+  syntaxKinds: [ts.SyntaxKind.AsExpression],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isAsExpression(node)) return;

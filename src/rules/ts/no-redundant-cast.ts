@@ -7,6 +7,7 @@ export const noRedundantCast: TSRule = {
   severity: "error",
   message:
     "Type assertion is redundant; the expression already has this type",
+  syntaxKinds: [ts.SyntaxKind.AsExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isAsExpression(node)) return;
@@ -19,17 +20,17 @@ export const noRedundantCast: TSRule = {
       return;
     }
 
-    const exprType = ctx.checker.getTypeAtLocation(node.expression);
+    const exprType = ctx.semantics.typeAtLocation(node.expression);
 
     // `any` is bidirectionally assignable to everything — these casts carry intent, not redundancy
     if (exprType.flags & ts.TypeFlags.Any) return;
 
-    const targetType = ctx.checker.getTypeFromTypeNode(node.type);
+    const targetType = ctx.semantics.typeFromTypeNode(node.type);
 
     // Redundant if both directions are assignable (types are equivalent)
     if (
-      ctx.checker.isTypeAssignableTo(exprType, targetType) &&
-      ctx.checker.isTypeAssignableTo(targetType, exprType)
+      ctx.semantics.isTypeAssignableTo(exprType, targetType) &&
+      ctx.semantics.isTypeAssignableTo(targetType, exprType)
     ) {
       ctx.report(node);
     }

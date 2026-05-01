@@ -1,5 +1,5 @@
 import { dirname, resolve } from "node:path";
-import { type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
 const EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 
@@ -7,8 +7,9 @@ export const duplicateFunctionName: CrossFileRule = {
   id: "duplicate-function-name",
   severity: "warning",
   message: "Same function name exported from multiple files; consolidate or rename to avoid ambiguity",
+  requires: ["functions", "imports"],
 
-  analyze(project: ProjectIndex): Diagnostic[] {
+  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     for (const group of project.functions.getNameCollisionGroups()) {
       const hashes = new Set(group.map((e) => e.hash));
@@ -39,7 +40,8 @@ export const duplicateFunctionName: CrossFileRule = {
       reportDuplicateGroup(group, this.id, this.severity,
         (e) => `${e.file}:${e.line}`,
         (e, others) => `Exported function "${e.name}" also defined in: ${others}`,
-        diagnostics);
+        diagnostics,
+        context);
     }
     return diagnostics;
   },

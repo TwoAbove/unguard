@@ -6,6 +6,7 @@ export const noNullTernaryNormalization: TSRule = {
   id: "no-null-ternary-normalization",
   severity: "warning",
   message: "Ternary null-normalization (x == null ? fallback : x); if the type guarantees non-null, remove the ternary; if not, fix the type upstream",
+  syntaxKinds: [ts.SyntaxKind.ConditionalExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isConditionalExpression(node)) return;

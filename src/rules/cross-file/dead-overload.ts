@@ -15,6 +15,7 @@ export const deadOverload: CrossFileRule = {
   id: "dead-overload",
   severity: "warning",
   message: "Overload signature has no matching call sites in the project",
+  requires: ["files", "callSites", "overloadCallSignatures"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];

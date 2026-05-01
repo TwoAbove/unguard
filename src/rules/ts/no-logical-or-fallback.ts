@@ -8,6 +8,7 @@ export const noLogicalOrFallback: TSRule = {
   severity: "warning",
   message:
     '|| fallback on a data-structure lookup swallows valid falsy values (0, ""); use ?? to only catch null/undefined',
+  syntaxKinds: [ts.SyntaxKind.BinaryExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;
@@ -17,14 +18,14 @@ export const noLogicalOrFallback: TSRule = {
     if (!isLiteral(right)) return;
 
     const left = node.left;
-    const lhsType = ctx.checker.getTypeAtLocation(left);
+    const lhsType = ctx.semantics.typeAtLocation(left);
 
     // Number() / parseInt() — || catches NaN/0 intentionally, ?? would not help
     if (isNumericCoercionCall(left)) return;
 
     // String type without undefined: || catches "" intentionally — suppress
     // String | undefined: || swallows "" AND catches undefined — should use ??
-    if (isStringNotNullable(lhsType, ctx.checker)) return;
+    if (isStringNotNullable(lhsType, ctx.semantics.checker)) return;
 
     // LHS includes number and RHS is not 0 -> catches bugs like `seed || undefined`
     if (includesNumberType(lhsType) && !isZeroLiteral(right)) {

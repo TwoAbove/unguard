@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { scan } from "../src/engine.ts";
+import { analyzeFiles } from "../src/scan/analyze.ts";
+import { allRules } from "../src/rules/index.ts";
 
 describe("engine", () => {
   it("scans test fixtures and finds diagnostics", async () => {
@@ -29,6 +31,82 @@ describe("engine", () => {
       rules: ["no-any-cast"],
     });
     expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("skips declaration files in source-only analysis", () => {
+    const file = new URL("./fixtures/declaration-file.d.ts", import.meta.url).pathname;
+    const rules = allRules.filter((rule) => rule.id === "no-inline-param-type");
+    expect(analyzeFiles([file], rules)).toHaveLength(0);
+  });
+
+  it("keeps project context for symbol-based cross-file rules when scanning one file", async () => {
+    const result = await scan({
+      paths: [new URL("./fixtures/project-context/lib.ts", import.meta.url).pathname],
+      rules: ["unused-export"],
+    });
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("keeps project context for syntax-only cross-file rules when scanning one file", async () => {
+    const file = new URL("./fixtures/project-context/z.ts", import.meta.url).pathname;
+    const result = await scan({
+      paths: [file],
+      rules: ["duplicate-function-declaration"],
+    });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.file).toBe(file);
+  });
+
+  it("reports syntax-only duplicate groups on a scanned first-sorted member", async () => {
+    const file = new URL("./fixtures/project-context/a.ts", import.meta.url).pathname;
+    const result = await scan({
+      paths: [file],
+      rules: ["duplicate-function-declaration"],
+    });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.file).toBe(file);
+  });
+
+  it("reports program-backed duplicate groups on a scanned first-sorted member", async () => {
+    const file = new URL("./fixtures/project-context/a.ts", import.meta.url).pathname;
+    const result = await scan({
+      paths: [file],
+      rules: ["duplicate-function-declaration", "no-any-cast"],
+    });
+    const duplicates = result.diagnostics.filter((d) => d.ruleId === "duplicate-function-declaration");
+    expect(duplicates).toHaveLength(1);
+    expect(duplicates[0]?.file).toBe(file);
+  });
+
+  it("keeps syntax-only cross-file indexes scoped to separate tsconfig groups", async () => {
+    const first = new URL("./fixtures/group-isolation/one/a.ts", import.meta.url).pathname;
+    const second = new URL("./fixtures/group-isolation/two/z.ts", import.meta.url).pathname;
+    const result = await scan({
+      paths: [first, second],
+      rules: ["duplicate-function-declaration"],
+    });
+    expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("keeps program-backed cross-file indexes scoped to separate tsconfig groups", async () => {
+    const first = new URL("./fixtures/group-isolation/one/a.ts", import.meta.url).pathname;
+    const second = new URL("./fixtures/group-isolation/two/z.ts", import.meta.url).pathname;
+    const result = await scan({
+      paths: [first, second],
+      rules: ["duplicate-function-declaration", "no-any-cast"],
+    });
+    expect(result.diagnostics.filter((d) => d.ruleId === "duplicate-function-declaration")).toHaveLength(0);
+  });
+
+  it("keeps symbol-based usage indexes scoped to separate tsconfig groups", async () => {
+    const unused = new URL("./fixtures/group-isolation/one/unused.ts", import.meta.url).pathname;
+    const used = new URL("./fixtures/group-isolation/two/used.ts", import.meta.url).pathname;
+    const result = await scan({
+      paths: [unused, used],
+      rules: ["unused-export"],
+    });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.file).toBe(unused);
   });
 
   it("ignores files from custom glob patterns", async () => {

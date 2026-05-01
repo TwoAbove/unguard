@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { TSRule, TSVisitContext } from "../types.ts";
+import type { SemanticServices, TSRule, TSVisitContext } from "../types.ts";
 
 export const noSwallowedCatch: TSRule = {
   kind: "ts",
@@ -7,6 +7,7 @@ export const noSwallowedCatch: TSRule = {
   severity: "warning",
   message:
     "Catch swallows the error: it neither throws nor returns a value referencing the caught error. Propagate via throw, or model failure into the return type carrying the original error",
+  syntaxKinds: [ts.SyntaxKind.CatchClause, ts.SyntaxKind.CallExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (ts.isCatchClause(node)) {
@@ -25,8 +26,8 @@ export const noSwallowedCatch: TSRule = {
       if (!handler) return;
       if (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler)) return;
 
-      const recvType = ctx.checker.getTypeAtLocation(callee.expression);
-      if (!isPromiseLike(recvType, ctx.checker)) return;
+      const recvType = ctx.semantics.typeAtLocation(callee.expression);
+      if (!isPromiseLike(recvType, ctx.semantics)) return;
 
       const binding = identifierBindingName(handler.parameters[0]);
       if (handlesError(handler.body, binding)) return;
@@ -120,19 +121,19 @@ function isReferenceUse(id: ts.Identifier): boolean {
   return true;
 }
 
-function isPromiseLike(type: ts.Type, checker: ts.TypeChecker): boolean {
-  if (hasThenMethod(type, checker)) return true;
-  if (type.isUnion()) return type.types.some((t) => isPromiseLike(t, checker));
-  if (type.isIntersection()) return type.types.some((t) => isPromiseLike(t, checker));
+function isPromiseLike(type: ts.Type, semantics: SemanticServices): boolean {
+  if (hasThenMethod(type, semantics)) return true;
+  if (type.isUnion()) return type.types.some((t) => isPromiseLike(t, semantics));
+  if (type.isIntersection()) return type.types.some((t) => isPromiseLike(t, semantics));
   return false;
 }
 
-function hasThenMethod(type: ts.Type, checker: ts.TypeChecker): boolean {
-  const apparent = checker.getApparentType(type);
+function hasThenMethod(type: ts.Type, semantics: SemanticServices): boolean {
+  const apparent = semantics.apparentType(type);
   const then = apparent.getProperty("then");
   if (!then) return false;
   const declaration = then.valueDeclaration ?? then.declarations?.[0];
   if (!declaration) return false;
-  const thenType = checker.getTypeOfSymbolAtLocation(then, declaration);
+  const thenType = semantics.typeOfSymbolAtLocation(then, declaration);
   return thenType.getCallSignatures().length > 0;
 }

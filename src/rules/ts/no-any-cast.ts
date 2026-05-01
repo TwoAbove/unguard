@@ -6,6 +6,8 @@ export const noAnyCast: TSRule = {
   id: "no-any-cast",
   severity: "error",
   message: "Casting to `any` erases type safety; use a specific type or generic instead",
+  syntaxKinds: [ts.SyntaxKind.AsExpression],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isAsExpression(node)) return;

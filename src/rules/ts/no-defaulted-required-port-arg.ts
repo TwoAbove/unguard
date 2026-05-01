@@ -7,6 +7,7 @@ export const noDefaultedRequiredPortArg: TSRule = {
   severity: "warning",
   message:
     "Default value on a parameter the implemented interface declares required; the implementation widens the contract — drop the default or change the interface",
+  syntaxKinds: [ts.SyntaxKind.MethodDeclaration],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isMethodDeclaration(node)) return;
@@ -39,10 +40,11 @@ function isParamRequired(sig: ts.Signature, paramIndex: number): boolean {
 }
 
 function resolveImplementedSignatures(
-  method: ts.MethodDeclaration & { name: ts.Identifier },
+  method: ts.MethodDeclaration,
   ctx: TSVisitContext,
 ): ts.Signature[] {
   const signatures: ts.Signature[] = [];
+  if (!ts.isIdentifier(method.name)) return signatures;
   const methodName = method.name.text;
   const parent = method.parent;
 
@@ -54,7 +56,7 @@ function resolveImplementedSignatures(
       }
     }
   } else if (ts.isObjectLiteralExpression(parent)) {
-    const contextualType = ctx.checker.getContextualType(parent);
+    const contextualType = ctx.semantics.contextualType(parent);
     if (contextualType) {
       collectSignaturesFromType(contextualType, methodName, parent, ctx, signatures);
     }
@@ -69,7 +71,7 @@ function collectSignatures(
   ctx: TSVisitContext,
   out: ts.Signature[],
 ): void {
-  const t = ctx.checker.getTypeAtLocation(typeNode);
+  const t = ctx.semantics.typeAtLocation(typeNode);
   collectSignaturesFromType(t, methodName, typeNode, ctx, out);
 }
 
@@ -82,7 +84,7 @@ function collectSignaturesFromType(
 ): void {
   const prop = type.getProperty(methodName);
   if (!prop) return;
-  const propType = ctx.checker.getTypeOfSymbolAtLocation(prop, location);
+  const propType = ctx.semantics.typeOfSymbolAtLocation(prop, location);
   for (const sig of propType.getCallSignatures()) {
     out.push(sig);
   }

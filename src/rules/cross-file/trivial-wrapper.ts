@@ -65,6 +65,7 @@ export const trivialWrapper: CrossFileRule = {
   severity: "info",
   message:
     "Function is a trivial wrapper that delegates without transformation; consider using the target directly",
+  requires: ["functions"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];

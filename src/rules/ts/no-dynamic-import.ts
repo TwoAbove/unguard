@@ -6,6 +6,8 @@ export const noDynamicImport: TSRule = {
   id: "no-dynamic-import",
   severity: "error",
   message: "Dynamic import() breaks static analysis and hides dependencies; use a static import instead",
+  syntaxKinds: [ts.SyntaxKind.CallExpression],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isCallExpression(node)) return;

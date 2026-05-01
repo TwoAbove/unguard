@@ -6,6 +6,7 @@ export const noNullishCoalescing: TSRule = {
   id: "no-nullish-coalescing",
   severity: "warning",
   message: "Nullish coalescing (??) fallback on a non-nullable type is dead code; remove the fallback or fix the type upstream",
+  syntaxKinds: [ts.SyntaxKind.BinaryExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;
@@ -19,7 +20,7 @@ export const noNullishCoalescing: TSRule = {
 function isPossiblyMissingArrayBindingValue(node: ts.Node, ctx: TSVisitContext): boolean {
   if (!ts.isIdentifier(node)) return false;
 
-  const symbol = ctx.checker.getSymbolAtLocation(node);
+  const symbol = ctx.semantics.symbolAtLocation(node);
   if (!symbol) return false;
 
   for (const declaration of symbol.declarations ?? []) {
@@ -31,7 +32,7 @@ function isPossiblyMissingArrayBindingValue(node: ts.Node, ctx: TSVisitContext):
     const index = pattern.elements.indexOf(declaration);
     if (index < 0) continue;
 
-    if (!isTupleSlotDefinitelyPresent(ctx.checker.getTypeAtLocation(pattern), index, ctx.checker)) {
+    if (!isTupleSlotDefinitelyPresent(ctx.semantics.typeAtLocation(pattern), index, ctx)) {
       // Without noUncheckedIndexedAccess, TS treats `[x] = T[]` as `x: T`, even though runtime can produce undefined.
       return true;
     }
@@ -40,18 +41,18 @@ function isPossiblyMissingArrayBindingValue(node: ts.Node, ctx: TSVisitContext):
   return false;
 }
 
-function isTupleSlotDefinitelyPresent(type: ts.Type, index: number, checker: ts.TypeChecker): boolean {
+function isTupleSlotDefinitelyPresent(type: ts.Type, index: number, ctx: TSVisitContext): boolean {
   if (type.isUnion()) {
-    return type.types.every((member) => isTupleSlotDefinitelyPresent(member, index, checker));
+    return type.types.every((member) => isTupleSlotDefinitelyPresent(member, index, ctx));
   }
 
-  const apparent = checker.getApparentType(type);
-  if (!isTupleTypeReference(apparent, checker)) return false;
+  const apparent = ctx.semantics.apparentType(type);
+  if (!isTupleTypeReference(apparent, ctx)) return false;
   return index < apparent.target.minLength;
 }
 
-function isTupleTypeReference(type: ts.Type, checker: ts.TypeChecker): type is ts.TupleTypeReference {
-  if (!checker.isTupleType(type)) return false;
+function isTupleTypeReference(type: ts.Type, ctx: TSVisitContext): type is ts.TupleTypeReference {
+  if (!ctx.semantics.isTupleType(type)) return false;
   if (!("target" in type)) return false;
 
   const target = type.target;

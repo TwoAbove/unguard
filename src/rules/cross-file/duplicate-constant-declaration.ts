@@ -1,12 +1,13 @@
 import type { ConstantEntry } from "../../collect/constant-registry.ts";
-import { type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
 export const duplicateConstantDeclaration: CrossFileRule = {
   id: "duplicate-constant-declaration",
   severity: "warning",
   message: "Identical constant value declared in multiple files; consolidate to a single definition",
+  requires: ["constants"],
 
-  analyze(project: ProjectIndex): Diagnostic[] {
+  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     for (const group of project.constants.getDuplicateGroups()) {
       const files = new Set(group.map((e) => e.file));
@@ -15,7 +16,8 @@ export const duplicateConstantDeclaration: CrossFileRule = {
       reportDuplicateGroup(group, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Constant "${e.name}" has identical value \`${e.valueText}\` to: ${others}`,
-        diagnostics);
+        diagnostics,
+        context);
     }
     return diagnostics;
   },
@@ -25,9 +27,13 @@ export const duplicateConstantDeclaration: CrossFileRule = {
 function hasNameOverlap(group: ConstantEntry[]): boolean {
   const segmentSets = group.map((e) => nameSegments(e.name));
   for (let i = 0; i < segmentSets.length; i++) {
+    const left = segmentSets[i];
+    if (left === undefined) continue;
     for (let j = i + 1; j < segmentSets.length; j++) {
-      for (const seg of segmentSets[i]!) {
-        if (segmentSets[j]!.has(seg)) return true;
+      const right = segmentSets[j];
+      if (right === undefined) continue;
+      for (const seg of left) {
+        if (right.has(seg)) return true;
       }
     }
   }

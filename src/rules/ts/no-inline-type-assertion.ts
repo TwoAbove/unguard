@@ -16,6 +16,8 @@ export const noInlineTypeAssertion: TSRule = {
   id: "no-inline-type-assertion",
   severity: "error",
   message: "Type assertion contains inline object type; extract a named type or fix the upstream type",
+  syntaxKinds: [ts.SyntaxKind.AsExpression, ts.SyntaxKind.TypeAssertionExpression],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (ts.isAsExpression(node) && containsTypeLiteral(node.type)) {

@@ -5,6 +5,7 @@ export const unusedExport: CrossFileRule = {
   id: "unused-export",
   severity: "info",
   message: "Exported function has no usages within the project",
+  requires: ["functions", "functionSymbols", "callSites", "callSiteSymbols", "imports"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];

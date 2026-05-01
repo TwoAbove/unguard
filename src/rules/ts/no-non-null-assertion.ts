@@ -6,6 +6,7 @@ export const noNonNullAssertion: TSRule = {
   id: "no-non-null-assertion",
   severity: "warning",
   message: "Non-null assertion (!) overrides the type checker; narrow with a type guard or fix the type so it's not nullable",
+  syntaxKinds: [ts.SyntaxKind.NonNullExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isNonNullExpression(node)) return;

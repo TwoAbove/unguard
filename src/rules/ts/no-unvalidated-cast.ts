@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { TSRule, TSVisitContext } from "../types.ts";
+import type { SemanticServices, TSRule, TSVisitContext } from "../types.ts";
 
 function isUntypedSource(type: ts.Type): boolean {
   if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return true;
@@ -8,7 +8,7 @@ function isUntypedSource(type: ts.Type): boolean {
   return false;
 }
 
-function isPrimitiveFamily(type: ts.Type, checker: ts.TypeChecker): boolean {
+function isPrimitiveFamily(type: ts.Type): boolean {
   if (
     type.flags &
     (ts.TypeFlags.String |
@@ -31,12 +31,12 @@ function isPrimitiveFamily(type: ts.Type, checker: ts.TypeChecker): boolean {
 
   // Branded types like `string & { __brand: "X" }` — check if any intersection member is primitive
   if (type.isIntersection()) {
-    return type.types.some((t) => isPrimitiveFamily(t, checker));
+    return type.types.some(isPrimitiveFamily);
   }
 
   // Unions: all members must be primitive
   if (type.isUnion()) {
-    return type.types.every((t) => isPrimitiveFamily(t, checker));
+    return type.types.every(isPrimitiveFamily);
   }
 
   return false;
@@ -44,7 +44,7 @@ function isPrimitiveFamily(type: ts.Type, checker: ts.TypeChecker): boolean {
 
 function isConcreteTarget(
   type: ts.Type,
-  checker: ts.TypeChecker,
+  semantics: SemanticServices,
 ): boolean {
   if (
     type.flags &
@@ -60,18 +60,18 @@ function isConcreteTarget(
     return false;
   }
 
-  if (isPrimitiveFamily(type, checker)) return false;
+  if (isPrimitiveFamily(type)) return false;
 
-  if (checker.isArrayType(type) || checker.isTupleType(type)) return true;
+  if (semantics.isArrayType(type) || semantics.isTupleType(type)) return true;
 
-  const apparent = checker.getApparentType(type);
+  const apparent = semantics.apparentType(type);
   if (apparent.getProperties().length > 0) return true;
   if (apparent.getStringIndexType() !== undefined) return true;
   if (apparent.getNumberIndexType() !== undefined) return true;
 
   // Unions: concrete if any non-null member is concrete
   if (type.isUnion()) {
-    return type.types.some((t) => isConcreteTarget(t, checker));
+    return type.types.some((t) => isConcreteTarget(t, semantics));
   }
 
   return false;
@@ -89,6 +89,7 @@ export const noUnvalidatedCast: TSRule = {
   severity: "error",
   message:
     "Casting `any`/`unknown` to a concrete type without runtime validation fabricates structure; validate first or narrow with a type guard",
+  syntaxKinds: [ts.SyntaxKind.AsExpression, ts.SyntaxKind.TypeAssertionExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isAsExpression(node) && !ts.isTypeAssertionExpression(node))
@@ -108,11 +109,11 @@ export const noUnvalidatedCast: TSRule = {
 
     if (isEmptyArrayLiteral(expr)) return;
 
-    const sourceType = ctx.checker.getTypeAtLocation(expr);
+    const sourceType = ctx.semantics.typeAtLocation(expr);
     if (!isUntypedSource(sourceType)) return;
 
-    const targetType = ctx.checker.getTypeFromTypeNode(node.type);
-    if (!isConcreteTarget(targetType, ctx.checker)) return;
+    const targetType = ctx.semantics.typeFromTypeNode(node.type);
+    if (!isConcreteTarget(targetType, ctx.semantics)) return;
 
     ctx.report(node);
   },

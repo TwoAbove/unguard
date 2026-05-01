@@ -1,13 +1,14 @@
 import * as ts from "typescript";
 import type { FunctionEntry } from "../../collect/function-registry.ts";
-import { type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
 export const nearDuplicateFunction: CrossFileRule = {
   id: "near-duplicate-function",
   severity: "warning",
   message: "Near-duplicate function bodies across files; consider parameterizing",
+  requires: ["functions"],
 
-  analyze(project: ProjectIndex): Diagnostic[] {
+  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     for (const group of project.functions.getNearDuplicateGroups()) {
       const MIN_NORMALIZED_BODY = 32;
@@ -17,7 +18,8 @@ export const nearDuplicateFunction: CrossFileRule = {
       reportDuplicateGroup(group, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Function "${e.name}" is near-duplicate of: ${others}`,
-        diagnostics);
+        diagnostics,
+        context);
     }
     return diagnostics;
   },

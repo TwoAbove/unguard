@@ -7,6 +7,8 @@ export const preferDefaultParamValue: TSRule = {
   id: "prefer-default-param-value",
   severity: "info",
   message: "Use a default parameter value instead of reassigning from nullish coalescing inside the body",
+  syntaxKinds: [ts.SyntaxKind.FunctionDeclaration, ts.SyntaxKind.ArrowFunction],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     const result = getFirstFunctionStatement(node);

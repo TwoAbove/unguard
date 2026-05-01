@@ -7,6 +7,7 @@ export const noDoubleNegationCoercion: TSRule = {
   id: "no-double-negation-coercion",
   severity: "info",
   message: "!! coercion hides intent; use an explicit check (!== null, !== undefined, .length > 0) so the condition documents what it tests",
+  syntaxKinds: [ts.SyntaxKind.PrefixUnaryExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isPrefixUnaryExpression(node)) return;
@@ -18,7 +19,7 @@ export const noDoubleNegationCoercion: TSRule = {
     const operand = inner.operand;
 
     // Already boolean -> !! is a no-op, promote severity
-    const innerType = ctx.checker.getTypeAtLocation(operand);
+    const innerType = ctx.semantics.typeAtLocation(operand);
     if (includesBooleanType(innerType) && !(innerType.flags & ts.TypeFlags.Union)) {
       ctx.report(node, "!! on an already-boolean type is a no-op; remove the double negation");
       return;

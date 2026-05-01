@@ -12,6 +12,8 @@ export const noCoalesceThenGuard: TSRule = {
   severity: "warning",
   message:
     "?? fallback fuses with subsequent guard; the partition is identical to checking the original value directly",
+  syntaxKinds: [ts.SyntaxKind.BinaryExpression],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;

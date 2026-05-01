@@ -7,6 +7,8 @@ export const preferRequiredParamWithGuard: TSRule = {
   id: "prefer-required-param-with-guard",
   severity: "info",
   message: "Optional param with immediate guard (if (!param) return/throw); make it required instead",
+  syntaxKinds: [ts.SyntaxKind.FunctionDeclaration, ts.SyntaxKind.ArrowFunction],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     const result = getFirstFunctionStatement(node);

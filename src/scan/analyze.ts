@@ -1,39 +1,132 @@
-import { collectProject, type CommentInfo } from "../collect/index.ts";
+import { readFileSync } from "node:fs";
+import type { SourceFile } from "typescript";
+import { collectAllComments, collectProject, collectSourceText, createProjectIndex, type CommentInfo, type ProjectIndexNeeds } from "../collect/index.ts";
 import { isTSRule } from "../rules/types.ts";
-import type { CrossFileRule, Diagnostic, Rule } from "../rules/types.ts";
-import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup } from "../typecheck/program.ts";
+import type { CrossFileRule, Diagnostic, ProjectIndexNeed, Rule, TSRule } from "../rules/types.ts";
+import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup, createProgramBuildCache, expandProjectFiles } from "../typecheck/program.ts";
 
 export function analyzeFiles(files: string[], rules: Rule[]): Diagnostic[] {
   const tsRules = rules.filter(isTSRule);
   const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
+  const indexNeeds = collectIndexNeeds(crossFileRules);
+
+  if (!requiresProgram(tsRules, indexNeeds)) {
+    return analyzeSourceOnlyFiles(files, tsRules, crossFileRules, indexNeeds);
+  }
 
   const groupConfigs = mergeCompatibleGroups(groupFilesByTsconfig(files));
   if (groupConfigs.length === 0) return [];
 
   const allDiagnostics: Diagnostic[] = [];
-  const allFiles = new Map<string, { source: string; comments: CommentInfo[] }>();
-  const allowedAll = new Set(files);
+  const allFiles = new Map<string, FileDiagnosticData>();
+  const programCache = createProgramBuildCache();
 
   // Process each tsconfig group sequentially so only one ts.Program is alive
-  // at a time. Strip AST references when copying file data to allow GC of the
-  // previous program before the next one is created.
+  // at a time. The program may load thousands of dependency files for type
+  // context, but analysis only needs to traverse the files requested by the
+  // scan.
   for (const groupConfig of groupConfigs) {
-    const program = createProgramForGroup(groupConfig, { expandProjectFiles: true });
+    const projectIndex = createProjectIndex();
+    const program = createProgramForGroup(groupConfig, { expandProjectFiles: true, cache: programCache });
     const allowed = new Set(groupConfig.scanFiles);
-    const { index, diagnostics } = collectProject(program, tsRules, allowed);
+    const collectFiles = indexNeeds.size > 0
+      ? new Set(expandProjectFiles(groupConfig).filter(isAnalyzableSourcePath))
+      : new Set<string>();
+    const { diagnostics } = collectProject(program, tsRules, allowed, {
+      collectFiles,
+      needs: indexNeeds,
+      index: projectIndex,
+    });
     allDiagnostics.push(...diagnostics);
-
-    for (const rule of crossFileRules) {
-      const ruleDiags = rule.analyze(index);
-      allDiagnostics.push(...ruleDiags.filter((d) => allowedAll.has(d.file)));
-    }
-
-    for (const [k, v] of index.files) {
-      allFiles.set(k, { source: v.source, comments: v.comments });
-    }
+    allDiagnostics.push(...runCrossFileRules(crossFileRules, projectIndex, allowed));
+    addFileData(allFiles, projectIndex, allowed);
   }
 
   return finalizeDiagnostics(allDiagnostics, allFiles);
+}
+
+function analyzeSourceOnlyFiles(
+  files: string[],
+  tsRules: TSRule[],
+  crossFileRules: CrossFileRule[],
+  indexNeeds: ProjectIndexNeeds,
+): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const allFiles = new Map<string, FileDiagnosticData>();
+
+  const groupConfigs = mergeCompatibleGroups(groupFilesByTsconfig(files));
+  for (const groupConfig of groupConfigs) {
+    const projectIndex = createProjectIndex();
+    const allowed = new Set(groupConfig.scanFiles.filter(isAnalyzableSourcePath));
+    const collectFiles = (indexNeeds.size > 0 ? expandProjectFiles(groupConfig) : groupConfig.scanFiles)
+      .filter(isAnalyzableSourcePath);
+
+    for (const file of collectFiles) {
+      const source = readFileSync(file, "utf8");
+      const result = collectSourceText(file, source, allowed.has(file) ? tsRules : [], {
+        index: projectIndex,
+        needs: indexNeeds,
+        retainFile: allowed.has(file) || indexNeeds.has("files"),
+      });
+      diagnostics.push(...result.diagnostics);
+    }
+
+    diagnostics.push(...runCrossFileRules(crossFileRules, projectIndex, allowed));
+    addFileData(allFiles, projectIndex, allowed);
+  }
+
+  return finalizeDiagnostics(diagnostics, allFiles);
+}
+
+function runCrossFileRules(
+  rules: CrossFileRule[],
+  projectIndex: ReturnType<typeof createProjectIndex>,
+  allowed: Set<string>,
+): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const crossFileContext = { reportableFiles: allowed };
+  for (const rule of rules) {
+    const ruleDiags = rule.analyze(projectIndex, crossFileContext);
+    diagnostics.push(...ruleDiags.filter((d) => allowed.has(d.file)));
+  }
+  return diagnostics;
+}
+
+function addFileData(
+  files: Map<string, FileDiagnosticData>,
+  projectIndex: ReturnType<typeof createProjectIndex>,
+  allowed: Set<string>,
+): void {
+  for (const [k, v] of projectIndex.files) {
+    if (!allowed.has(k)) continue;
+    files.set(k, { source: v.source, sourceFile: v.sourceFile });
+  }
+}
+
+function isAnalyzableSourcePath(file: string): boolean {
+  const normalized = file.replaceAll("\\", "/");
+  if (normalized.includes("/node_modules/")) return false;
+  return !/\.d\.[cm]?ts$/i.test(normalized);
+}
+
+function requiresProgram(tsRules: TSRule[], indexNeeds: ProjectIndexNeeds): boolean {
+  if (tsRules.some((rule) => rule.requiresTypeInfo !== false)) return true;
+  return indexNeeds.has("functionSymbols")
+    || indexNeeds.has("callSiteSymbols")
+    || indexNeeds.has("overloadCallSignatures");
+}
+
+function collectIndexNeeds(rules: CrossFileRule[]): ProjectIndexNeeds {
+  const needs = new Set<ProjectIndexNeed>();
+  for (const rule of rules) {
+    for (const need of rule.requires ?? []) {
+      needs.add(need);
+    }
+  }
+  if (needs.has("functionSymbols")) needs.add("functions");
+  if (needs.has("callSiteSymbols") || needs.has("overloadCallSignatures")) needs.add("callSites");
+  if (needs.has("overloadCallSignatures")) needs.add("callSiteSymbols");
+  return needs;
 }
 
 function dedupeDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
@@ -50,7 +143,7 @@ function dedupeDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
 
 function finalizeDiagnostics(
   diagnostics: Diagnostic[],
-  files: Map<string, { source: string; comments: CommentInfo[] }>,
+  files: Map<string, FileDiagnosticData>,
 ): Diagnostic[] {
   const diagnosticsByFile = new Map<string, Diagnostic[]>();
   for (const diagnostic of diagnostics) {
@@ -69,10 +162,15 @@ function finalizeDiagnostics(
       finalized.push(...fileDiagnostics);
       continue;
     }
-    finalized.push(...annotateAndFilter(fileDiagnostics, fileData.comments, fileData.source));
+    finalized.push(...annotateAndFilter(fileDiagnostics, collectAllComments(fileData.sourceFile), fileData.source));
   }
 
   return dedupeDiagnostics(finalized);
+}
+
+interface FileDiagnosticData {
+  source: string;
+  sourceFile: SourceFile;
 }
 
 /**

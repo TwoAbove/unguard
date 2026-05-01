@@ -6,6 +6,7 @@ export const repeatedObjectShape: CrossFileRule = {
   id: "repeated-object-shape",
   severity: "warning",
   message: "Repeated object literal shape; consider extracting a type and factory",
+  requires: ["files"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];

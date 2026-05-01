@@ -1,12 +1,13 @@
 import * as ts from "typescript";
-import { type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
 export const duplicateFunctionDeclaration: CrossFileRule = {
   id: "duplicate-function-declaration",
   severity: "warning",
   message: "Identical function body declared in multiple files; consolidate to a single definition",
+  requires: ["functions"],
 
-  analyze(project: ProjectIndex): Diagnostic[] {
+  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     for (const group of project.functions.getDuplicateGroups()) {
       const first = group[0];
@@ -17,7 +18,8 @@ export const duplicateFunctionDeclaration: CrossFileRule = {
       reportDuplicateGroup(group, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Function "${e.name}" has identical body to: ${others}`,
-        diagnostics);
+        diagnostics,
+        context);
     }
     return diagnostics;
   },

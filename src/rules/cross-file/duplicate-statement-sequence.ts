@@ -1,11 +1,12 @@
-import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
 export const duplicateStatementSequence: CrossFileRule = {
   id: "duplicate-statement-sequence",
   severity: "info",
   message: "Repeated statement sequence; consider extracting to a shared helper",
+  requires: ["statementSequences"],
 
-  analyze(project: ProjectIndex): Diagnostic[] {
+  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     const MIN_NORMALIZED_BODY = 128;
 
@@ -24,21 +25,11 @@ export const duplicateStatementSequence: CrossFileRule = {
       const deduped = [...byLocation.values()];
       if (deduped.length < 2) continue;
 
-      const sorted = deduped.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
-      for (const entry of sorted.slice(1)) {
-        const others = sorted
-          .filter((e) => e !== entry)
-          .map((e) => `${e.file}:${e.line}`)
-          .join(", ");
-        diagnostics.push({
-          ruleId: this.id,
-          severity: this.severity,
-          message: `Statement sequence (${entry.statementCount} statements) duplicated at: ${others}`,
-          file: entry.file,
-          line: entry.line,
-          column: 1,
-        });
-      }
+      reportDuplicateGroup(deduped, this.id, this.severity,
+        (entry) => `${entry.file}:${entry.line}`,
+        (entry, others) => `Statement sequence (${entry.statementCount} statements) duplicated at: ${others}`,
+        diagnostics,
+        context);
     }
     return diagnostics;
   },

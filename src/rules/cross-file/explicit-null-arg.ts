@@ -6,6 +6,7 @@ export const explicitNullArg: CrossFileRule = {
   id: "explicit-null-arg",
   severity: "warning",
   message: "Explicit null/undefined passed to a project function; consider redesigning the interface to not accept nullish values",
+  requires: ["functions", "functionSymbols", "callSites", "callSiteSymbols"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
@@ -46,4 +47,3 @@ export const explicitNullArg: CrossFileRule = {
     return diagnostics;
   },
 };
-

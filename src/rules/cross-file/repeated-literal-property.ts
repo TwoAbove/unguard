@@ -14,6 +14,7 @@ export const repeatedLiteralProperty: CrossFileRule = {
   id: "repeated-literal-property",
   severity: "warning",
   message: "Repeated literal value in object properties; consider extracting a constant or factory",
+  requires: ["files"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];

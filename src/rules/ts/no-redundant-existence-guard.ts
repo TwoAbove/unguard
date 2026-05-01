@@ -7,6 +7,7 @@ export const noRedundantExistenceGuard: TSRule = {
   id: "no-redundant-existence-guard",
   severity: "warning",
   message: "Redundant existence guard (obj && obj.prop) on a non-nullable type; remove the guard or fix the type upstream",
+  syntaxKinds: [ts.SyntaxKind.BinaryExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;

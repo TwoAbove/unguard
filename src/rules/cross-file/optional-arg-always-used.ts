@@ -4,6 +4,7 @@ export const optionalArgAlwaysUsed: CrossFileRule = {
   id: "optional-arg-always-used",
   severity: "warning",
   message: "Optional parameter is always provided at every call site; make it required",
+  requires: ["functions", "functionSymbols", "callSites", "callSiteSymbols"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];

@@ -7,6 +7,7 @@ export const noAwaitCoalesce: TSRule = {
   severity: "warning",
   message:
     "?? on a value whose nullability comes from a call's return type collapses failure modes; check the result and branch instead of defaulting",
+  syntaxKinds: [ts.SyntaxKind.BinaryExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;
@@ -15,7 +16,7 @@ export const noAwaitCoalesce: TSRule = {
     const walk = walkLeftChain(node.left);
     if (!walk || !walk.call) return;
 
-    const sig = ctx.checker.getResolvedSignature(walk.call);
+    const sig = ctx.semantics.resolvedSignature(walk.call);
     if (!sig) return;
 
     // Built-in container APIs (Map.get, Array.find, ts.forEachChild, etc.) use
@@ -31,7 +32,7 @@ export const noAwaitCoalesce: TSRule = {
 
     let returnType = sig.getReturnType();
     if (walk.awaited) {
-      const awaitedType = ctx.checker.getAwaitedType(returnType);
+      const awaitedType = ctx.semantics.awaitedType(returnType);
       if (awaitedType) returnType = awaitedType;
     }
 

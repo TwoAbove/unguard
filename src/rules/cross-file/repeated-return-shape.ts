@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, selectReportTarget } from "../types.ts";
 import { extractPropertyNames, getShapeGroup } from "./object-shape.ts";
 import type { TypeEntry } from "../../collect/type-registry.ts";
 
@@ -14,8 +14,9 @@ export const repeatedReturnShape: CrossFileRule = {
   id: "repeated-return-shape",
   severity: "warning",
   message: "Multiple functions return the same object shape; consider a shared return type",
+  requires: ["files", "types"],
 
-  analyze(project: ProjectIndex): Diagnostic[] {
+  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     const THRESHOLD = 3;
     const shapeMap = new Map<string, ReturnShapeEntry[]>();
@@ -53,18 +54,18 @@ export const repeatedReturnShape: CrossFileRule = {
       if (uniqueFiles.size < 2) continue;
 
       const sorted = unique.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
-      const first = sorted[0];
-      if (first === undefined) continue;
+      const target = selectReportTarget(sorted, context.reportableFiles);
+      if (target === undefined) continue;
       const others = sorted
-        .slice(1)
+        .filter((e) => e !== target)
         .map((e) => `${e.functionName} (${e.file}:${e.line})`)
         .join(", ");
       diagnostics.push({
         ruleId: this.id,
         severity: this.severity,
-        message: `${unique.length} functions return shape {${first.props.join(", ")}}; consider a shared return type (${others})`,
-        file: first.file,
-        line: first.line,
+        message: `${unique.length} functions return shape {${target.props.join(", ")}}; consider a shared return type (${others})`,
+        file: target.file,
+        line: target.line,
         column: 1,
       });
     }

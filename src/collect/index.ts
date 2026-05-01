@@ -3,12 +3,13 @@ import { createHash } from "node:crypto";
 import { TypeRegistry } from "./type-registry.ts";
 import { FunctionRegistry, type FunctionEntry, type ParamInfo } from "./function-registry.ts";
 import { ConstantRegistry } from "./constant-registry.ts";
-import { hashFunctionBody, hashFunctionBodyNormalized, bodyTextLength, normalizedBodyTextLength, normalizeText, hashText } from "../utils/hash.ts";
+import { analyzeFunctionBody, hashText, normalizeText, type FunctionBodyAnalysis } from "../utils/hash.ts";
 import { StatementSequenceRegistry, type StatementSequenceEntry } from "./statement-sequence-registry.ts";
 import { InlineParamTypeRegistry } from "./inline-type-registry.ts";
-import type { Diagnostic, TSRule } from "../rules/types.ts";
+import type { Diagnostic, ProjectIndexNeed, SemanticServices, TSRule, TSVisitContext } from "../rules/types.ts";
 import { buildContext } from "../typecheck/walk.ts";
 import { isInlineParamType } from "../typecheck/utils.ts";
+import { SemanticCache } from "../typecheck/semantic-cache.ts";
 
 export interface CommentInfo {
   type: "Line" | "Block";
@@ -17,17 +18,39 @@ export interface CommentInfo {
   end: number;
 }
 
+const commentCache = new WeakMap<ts.SourceFile, CommentInfo[]>();
+
 export interface ProjectIndex {
   types: TypeRegistry;
   functions: FunctionRegistry;
   constants: ConstantRegistry;
   callSites: CallSite[];
   imports: ImportEntry[];
-  files: Map<string, { source: string; sourceFile: ts.SourceFile; comments: CommentInfo[] }>;
+  files: Map<string, { source: string; sourceFile: ts.SourceFile }>;
   /** Whitespace-normalized file content hash → list of file paths */
   fileHashes: Map<string, string[]>;
   statementSequences: StatementSequenceRegistry;
   inlineParamTypes: InlineParamTypeRegistry;
+}
+
+export interface CollectProjectOptions {
+  /**
+   * Restrict registry/index collection to these files while keeping the full
+   * ts.Program available for type resolution.
+   */
+  collectFiles?: Set<string>;
+  needs?: ProjectIndexNeeds;
+  index?: ProjectIndex;
+}
+
+export interface SyntaxFileAnalysis {
+  diagnostics: Diagnostic[];
+}
+
+export interface CollectSourceTextOptions {
+  index?: ProjectIndex;
+  needs?: ProjectIndexNeeds;
+  retainFile?: boolean;
 }
 
 export interface CallSite {
@@ -47,21 +70,182 @@ export interface ImportEntry {
   source: string;
 }
 
+interface RuleContext {
+  rule: TSRule;
+  ctx: TSVisitContext;
+}
+
+interface RuleDispatch {
+  byKind: Map<ts.SyntaxKind, RuleContext[]>;
+  global: RuleContext[];
+}
+
+export type ProjectIndexNeeds = ReadonlySet<ProjectIndexNeed>;
+
+const ALL_PROJECT_INDEX_NEEDS: ProjectIndexNeeds = new Set<ProjectIndexNeed>([
+  "files",
+  "types",
+  "functions",
+  "functionSymbols",
+  "constants",
+  "callSites",
+  "callSiteSymbols",
+  "overloadCallSignatures",
+  "imports",
+  "fileHashes",
+  "statementSequences",
+  "inlineParamTypes",
+]);
+
+export function createProjectIndex(): ProjectIndex {
+  return {
+    types: new TypeRegistry(),
+    functions: new FunctionRegistry(),
+    constants: new ConstantRegistry(),
+    callSites: [],
+    imports: [],
+    files: new Map(),
+    fileHashes: new Map(),
+    statementSequences: new StatementSequenceRegistry(),
+    inlineParamTypes: new InlineParamTypeRegistry(),
+  };
+}
+
+export function collectSourceText(
+  file: string,
+  source: string,
+  tsRules: TSRule[],
+  options: CollectSourceTextOptions = {},
+): SyntaxFileAnalysis {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKindForFile(file));
+  const diagnostics: Diagnostic[] = [];
+  const semantics = buildUnavailableSemantics(file);
+  const needs = options.needs ?? new Set<ProjectIndexNeed>();
+  const index = options.index;
+
+  if (index !== undefined) {
+    if (needs.has("fileHashes")) addFileHash(index, file, source);
+  }
+
+  const ruleDispatch = buildRuleDispatch(tsRules.map((rule) => ({
+    rule,
+    ctx: buildSyntaxContext(rule, sourceFile, source, file, diagnostics),
+  })));
+
+  function visit(node: ts.Node): void {
+    visitRuleContexts(node, ruleDispatch);
+    if (index !== undefined && needs.size > 0) {
+      collectIndexNode(node, file, sourceFile, semantics, index, needs);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  if (index !== undefined && options.retainFile !== false) {
+    index.files.set(file, { source, sourceFile });
+  }
+
+  return { diagnostics };
+}
+
+function scriptKindForFile(file: string): ts.ScriptKind {
+  if (file.endsWith(".tsx")) return ts.ScriptKind.TSX;
+  if (file.endsWith(".jsx")) return ts.ScriptKind.JSX;
+  if (file.endsWith(".js") || file.endsWith(".mjs") || file.endsWith(".cjs")) return ts.ScriptKind.JS;
+  if (file.endsWith(".json")) return ts.ScriptKind.JSON;
+  return ts.ScriptKind.TS;
+}
+
+function buildSyntaxContext(
+  rule: TSRule,
+  sourceFile: ts.SourceFile,
+  source: string,
+  filename: string,
+  diagnostics: Diagnostic[],
+): TSVisitContext {
+  const checker = buildUnavailableChecker(`rule "${rule.id}"`);
+  const semantics = buildUnavailableSemantics(`rule "${rule.id}"`);
+
+  return {
+    filename,
+    source,
+    sourceFile,
+    checker,
+    semantics,
+
+    report(node: ts.Node, message?: string) {
+      const { line, character } = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile));
+      diagnostics.push({
+        ruleId: rule.id,
+        severity: rule.severity,
+        message: message ?? rule.message,
+        file: filename,
+        line: line + 1,
+        column: character + 1,
+      });
+    },
+
+    reportAtOffset(offset: number, message?: string) {
+      const { line, character } = ts.getLineAndCharacterOfPosition(sourceFile, offset);
+      diagnostics.push({
+        ruleId: rule.id,
+        severity: rule.severity,
+        message: message ?? rule.message,
+        file: filename,
+        line: line + 1,
+        column: character + 1,
+      });
+    },
+
+    isNullable: unavailableTypeInfo,
+    isExternal: unavailableTypeInfo,
+  };
+}
+
+function buildUnavailableChecker(label: string): ts.TypeChecker {
+  return new Proxy({}, {
+    get(): never {
+      throw new Error(`${label} requires type checking and cannot run in source-only mode.`);
+    },
+  }) as ts.TypeChecker;
+}
+
+function unavailableTypeInfo(): never {
+  throw new Error("This rule requires type checking and cannot run in source-only mode.");
+}
+
+function buildUnavailableSemantics(label: string): SemanticServices {
+  const checker = buildUnavailableChecker(label);
+  return {
+    checker,
+    typeAtLocation: unavailableTypeInfo,
+    symbolAtLocation: unavailableTypeInfo,
+    resolvedSignature: unavailableTypeInfo,
+    typeFromTypeNode: unavailableTypeInfo,
+    contextualType: unavailableTypeInfo,
+    typeOfSymbolAtLocation: unavailableTypeInfo,
+    aliasedSymbol: unavailableTypeInfo,
+    awaitedType: unavailableTypeInfo,
+    apparentType: unavailableTypeInfo,
+    isArrayType: unavailableTypeInfo,
+    isTupleType: unavailableTypeInfo,
+    isTypeAssignableTo: unavailableTypeInfo,
+  };
+}
+
 export function collectProject(
   program: ts.Program,
   tsRules?: TSRule[],
   allowedFiles?: Set<string>,
+  options: CollectProjectOptions = {},
 ): { index: ProjectIndex; diagnostics: Diagnostic[] } {
+  const index = options.index ?? createProjectIndex();
+  const needs = options.needs ?? ALL_PROJECT_INDEX_NEEDS;
   const checker = program.getTypeChecker();
-  const types = new TypeRegistry();
-  const functions = new FunctionRegistry();
-  const constants = new ConstantRegistry();
-  const callSites: CallSite[] = [];
-  const imports: ImportEntry[] = [];
-  const statementSequences = new StatementSequenceRegistry();
-  const inlineParamTypes = new InlineParamTypeRegistry();
-  const fileMap = new Map<string, { source: string; sourceFile: ts.SourceFile; comments: CommentInfo[] }>();
+  const semantics = new SemanticCache(checker);
   const diagnostics: Diagnostic[] = [];
+  const overloadCalleeNames = needs.has("overloadCallSignatures")
+    ? collectOverloadCalleeNames(program, options.collectFiles ?? allowedFiles)
+    : undefined;
 
   for (const sourceFile of program.getSourceFiles()) {
     const file = sourceFile.fileName;
@@ -69,55 +253,180 @@ export function collectProject(
     if (file.includes("node_modules")) continue;
 
     const isReportable = !allowedFiles || allowedFiles.has(file);
+    const shouldCollect = options.collectFiles === undefined || options.collectFiles.has(file);
+    if (!isReportable && !shouldCollect) continue;
     const source = sourceFile.getFullText();
 
-    // Always collect cross-file data (types, functions, call sites, imports)
-    // from all program files for complete analysis context.
-    // Only run TS rules and include in fileMap for reportable (scanned) files.
-    if (isReportable) {
-      const comments = collectAllComments(sourceFile);
-      fileMap.set(file, { source, sourceFile, comments });
+    if (isReportable || (shouldCollect && needs.has("files"))) {
+      index.files.set(file, { source, sourceFile });
+    }
+    if (shouldCollect && needs.has("fileHashes")) {
+      addFileHash(index, file, source);
     }
 
-    const ruleContexts = isReportable
-      ? tsRules?.map((rule) => ({
+    const ruleDispatch = isReportable
+      ? buildRuleDispatch(tsRules?.map((rule) => ({
           rule,
-          ctx: buildContext(rule, sourceFile, checker, source, file, diagnostics),
-        }))
+          ctx: buildContext(rule, sourceFile, semantics, source, file, diagnostics),
+        })) ?? [])
       : undefined;
 
     function visit(node: ts.Node): void {
-      collectTypes(node, file, sourceFile, types);
-      collectFunctions(node, file, sourceFile, checker, functions);
-      collectConstants(node, file, sourceFile, constants);
-      collectCallSites(node, file, sourceFile, checker, callSites);
-      collectStatementSequences(node, file, sourceFile, statementSequences);
-      collectInlineParamTypes(node, file, sourceFile, inlineParamTypes);
-      collectImports(node, file, imports);
-      if (ruleContexts) {
-        for (const { rule, ctx } of ruleContexts) {
-          rule.visit(node, ctx);
+      if (shouldCollect) {
+        collectIndexNode(node, file, sourceFile, semantics, index, needs, overloadCalleeNames);
+      }
+      if (ruleDispatch) {
+        visitRuleContexts(node, ruleDispatch);
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(sourceFile);
+  }
+
+  return { index, diagnostics };
+}
+
+function collectIndexNode(
+  node: ts.Node,
+  file: string,
+  sourceFile: ts.SourceFile,
+  semantics: SemanticServices,
+  index: ProjectIndex,
+  needs: ProjectIndexNeeds,
+  overloadCalleeNames?: Set<string>,
+): void {
+  switch (node.kind) {
+    case ts.SyntaxKind.TypeAliasDeclaration:
+    case ts.SyntaxKind.InterfaceDeclaration:
+      if (!needs.has("types")) return;
+      collectTypes(node, file, sourceFile, index.types);
+      return;
+    case ts.SyntaxKind.VariableStatement:
+      if (needs.has("functions")) {
+        collectFunctions(node, file, sourceFile, semantics, index.functions, needs.has("functionSymbols"));
+      }
+      if (needs.has("constants")) {
+        collectConstants(node, file, sourceFile, index.constants);
+      }
+      return;
+    case ts.SyntaxKind.FunctionDeclaration:
+    case ts.SyntaxKind.PropertyAssignment:
+    case ts.SyntaxKind.ArrowFunction:
+    case ts.SyntaxKind.FunctionExpression:
+    case ts.SyntaxKind.MethodDeclaration:
+      if (needs.has("functions")) {
+        collectFunctions(node, file, sourceFile, semantics, index.functions, needs.has("functionSymbols"));
+      }
+      return;
+    case ts.SyntaxKind.CallExpression:
+      if (!needs.has("callSites")) return;
+      collectCallSites(
+        node,
+        file,
+        sourceFile,
+        semantics,
+        index.callSites,
+        needs.has("callSiteSymbols"),
+        needs.has("overloadCallSignatures"),
+        overloadCalleeNames,
+      );
+      return;
+    case ts.SyntaxKind.Block:
+      if (!needs.has("statementSequences")) return;
+      collectStatementSequences(node, file, sourceFile, index.statementSequences);
+      return;
+    case ts.SyntaxKind.TypeLiteral:
+      if (!needs.has("inlineParamTypes")) return;
+      collectInlineParamTypes(node, file, sourceFile, index.inlineParamTypes);
+      return;
+    case ts.SyntaxKind.ImportDeclaration:
+    case ts.SyntaxKind.ExportDeclaration:
+      if (!needs.has("imports")) return;
+      collectImports(node, file, index.imports);
+      return;
+  }
+}
+
+function addFileHash(index: ProjectIndex, file: string, source: string): void {
+  const normalized = source.replace(/\s+/g, " ").trim();
+  const hash = createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+  let list = index.fileHashes.get(hash);
+  if (list === undefined) {
+    list = [];
+    index.fileHashes.set(hash, list);
+  }
+  if (!list.includes(file)) list.push(file);
+}
+
+function buildRuleDispatch(ruleContexts: RuleContext[]): RuleDispatch {
+  const byKind = new Map<ts.SyntaxKind, RuleContext[]>();
+  const global: RuleContext[] = [];
+
+  for (const ruleContext of ruleContexts) {
+    const kinds = ruleContext.rule.syntaxKinds;
+    if (kinds === undefined) {
+      global.push(ruleContext);
+      continue;
+    }
+    for (const kind of kinds) {
+      let contexts = byKind.get(kind);
+      if (contexts === undefined) {
+        contexts = [];
+        byKind.set(kind, contexts);
+      }
+      contexts.push(ruleContext);
+    }
+  }
+
+  return { byKind, global };
+}
+
+function visitRuleContexts(node: ts.Node, ruleDispatch: RuleDispatch): void {
+  const contexts = ruleDispatch.byKind.get(node.kind);
+  if (contexts !== undefined) {
+    for (const { rule, ctx } of contexts) {
+      rule.visit(node, ctx);
+    }
+  }
+  for (const { rule, ctx } of ruleDispatch.global) {
+    rule.visit(node, ctx);
+  }
+}
+
+function collectOverloadCalleeNames(
+  program: ts.Program,
+  collectFiles: Set<string> | undefined,
+): Set<string> {
+  const overloaded = new Set<string>();
+
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile) continue;
+    if (sourceFile.fileName.includes("node_modules")) continue;
+    if (collectFiles !== undefined && !collectFiles.has(sourceFile.fileName)) continue;
+
+    const implementations = new Set<string>();
+    const signatures: string[] = [];
+
+    function visit(node: ts.Node): void {
+      if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && node.name !== undefined) {
+        const name = node.name.getText(sourceFile);
+        if (node.body === undefined) {
+          signatures.push(name);
+        } else {
+          implementations.add(name);
         }
       }
       ts.forEachChild(node, visit);
     }
-    ts.forEachChild(sourceFile, visit);
-  }
 
-  // Compute whole-file content hashes for duplicate-file detection
-  const fileHashes = new Map<string, string[]>();
-  for (const [file, { source }] of fileMap) {
-    const normalized = source.replace(/\s+/g, " ").trim();
-    const hash = createHash("sha256").update(normalized).digest("hex").slice(0, 16);
-    let list = fileHashes.get(hash);
-    if (list === undefined) {
-      list = [];
-      fileHashes.set(hash, list);
+    visit(sourceFile);
+
+    for (const name of signatures) {
+      if (implementations.has(name)) overloaded.add(name);
     }
-    list.push(file);
   }
 
-  return { index: { types, functions, constants, callSites, imports, files: fileMap, fileHashes, statementSequences, inlineParamTypes }, diagnostics };
+  return overloaded;
 }
 
 function hasNonPublicModifier(node: ts.Node): boolean {
@@ -178,33 +487,38 @@ function buildFunctionEntry(
   lineNode: ts.Node,
   name: string,
   extra: Partial<Pick<FunctionEntry, "exported" | "symbol" | "className" | "implementsInterface" | "node">>,
+  bodyAnalysis?: FunctionBodyAnalysis,
 ): FunctionEntry {
   const line = ts.getLineAndCharacterOfPosition(sourceFile, lineNode.getStart(sourceFile)).line + 1;
   const params = extractParams(parameters, sourceFile);
   const paramNames = params.map((p) => p.name);
-  const hash = hashFunctionBody(body, sourceFile);
-  const normalizedHash = hashFunctionBodyNormalized(body, sourceFile, paramNames);
-  const bodyLength = bodyTextLength(body, sourceFile);
-  const normalizedBodyLength = normalizedBodyTextLength(body, sourceFile, paramNames);
+  const analysis = bodyAnalysis ?? analyzeFunctionBody(body, sourceFile, paramNames);
   return {
     name,
     file,
     line,
-    hash,
-    normalizedHash,
+    hash: analysis.hash,
+    normalizedHash: analysis.normalizedHash,
     params,
     node: extra.node ?? body,
     exported: extra.exported ?? false,
-    bodyLength,
-    normalizedBodyLength,
+    bodyLength: analysis.bodyLength,
+    normalizedBodyLength: analysis.normalizedBodyLength,
     ...extra,
   };
 }
 
-function collectFunctions(node: ts.Node, file: string, sourceFile: ts.SourceFile, checker: ts.TypeChecker, registry: FunctionRegistry): void {
+function collectFunctions(
+  node: ts.Node,
+  file: string,
+  sourceFile: ts.SourceFile,
+  semantics: SemanticServices,
+  registry: FunctionRegistry,
+  resolveSymbols: boolean,
+): void {
   if (ts.isFunctionDeclaration(node) && node.name && node.body) {
     registry.add(buildFunctionEntry(node.body, node.parameters, sourceFile, file, node, node.name.text, {
-      exported: isExported(node), symbol: checker.getSymbolAtLocation(node.name), node,
+      exported: isExported(node), symbol: resolveSymbols ? semantics.symbolAtLocation(node.name) : undefined, node,
     }));
   }
 
@@ -215,14 +529,14 @@ function collectFunctions(node: ts.Node, file: string, sourceFile: ts.SourceFile
       if (decl.initializer && ts.isArrowFunction(decl.initializer) && ts.isIdentifier(decl.name)) {
         const arrow = decl.initializer;
         registry.add(buildFunctionEntry(arrow.body, arrow.parameters, sourceFile, file, decl, decl.name.text, {
-          exported, symbol: checker.getSymbolAtLocation(decl.name), node: arrow,
+          exported, symbol: resolveSymbols ? semantics.symbolAtLocation(decl.name) : undefined, node: arrow,
         }));
       }
       if (decl.initializer && ts.isFunctionExpression(decl.initializer) && ts.isIdentifier(decl.name)) {
         const fn = decl.initializer;
         if (fn.body) {
           registry.add(buildFunctionEntry(fn.body, fn.parameters, sourceFile, file, decl, decl.name.text, {
-            exported, symbol: checker.getSymbolAtLocation(decl.name), node: fn,
+            exported, symbol: resolveSymbols ? semantics.symbolAtLocation(decl.name) : undefined, node: fn,
           }));
         }
       }
@@ -256,9 +570,11 @@ function collectFunctions(node: ts.Node, file: string, sourceFile: ts.SourceFile
       const body = ts.isArrowFunction(node) ? node.body : node.body;
       if (body) {
         const MIN_ANON_BODY = 64;
-        if (bodyTextLength(body, sourceFile) >= MIN_ANON_BODY) {
+        const params = extractParams(node.parameters, sourceFile);
+        const bodyAnalysis = analyzeFunctionBody(body, sourceFile, params.map((p) => p.name));
+        if (bodyAnalysis.bodyLength >= MIN_ANON_BODY) {
           const name = deriveAnonymousName(node, sourceFile);
-          registry.add(buildFunctionEntry(body, node.parameters, sourceFile, file, node, name, { node }));
+          registry.add(buildFunctionEntry(body, node.parameters, sourceFile, file, node, name, { node }, bodyAnalysis));
         }
       }
     }
@@ -275,7 +591,11 @@ function collectFunctions(node: ts.Node, file: string, sourceFile: ts.SourceFile
         (c) => c.token === ts.SyntaxKind.ImplementsKeyword,
       ) ?? false;
       registry.add(buildFunctionEntry(node.body, node.parameters, sourceFile, file, node, name, {
-        exported: isExported(parent), symbol: checker.getSymbolAtLocation(node.name), node, className, implementsInterface,
+        exported: isExported(parent),
+        symbol: resolveSymbols ? semantics.symbolAtLocation(node.name) : undefined,
+        node,
+        className,
+        implementsInterface,
       }));
     }
   }
@@ -403,7 +723,16 @@ function collectInlineParamTypes(
   registry.add(file, line, node as ts.TypeLiteralNode, sourceFile);
 }
 
-function collectCallSites(node: ts.Node, file: string, sourceFile: ts.SourceFile, checker: ts.TypeChecker, sites: CallSite[]): void {
+function collectCallSites(
+  node: ts.Node,
+  file: string,
+  sourceFile: ts.SourceFile,
+  semantics: SemanticServices,
+  sites: CallSite[],
+  resolveSymbol: boolean,
+  resolveOverloadSignatures: boolean,
+  overloadCalleeNames?: Set<string>,
+): void {
   if (!ts.isCallExpression(node)) return;
   let calleeName: string | null = null;
   if (ts.isIdentifier(node.expression)) {
@@ -414,11 +743,12 @@ function collectCallSites(node: ts.Node, file: string, sourceFile: ts.SourceFile
   if (calleeName) {
     const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
     // Resolve the symbol the call refers to (follows imports to the declaration)
-    let symbol = checker.getSymbolAtLocation(node.expression);
-    if (symbol && (symbol.flags & ts.SymbolFlags.Alias)) {
-      symbol = checker.getAliasedSymbol(symbol);
+    let symbol = resolveSymbol ? semantics.symbolAtLocation(node.expression) : undefined;
+    if (symbol !== undefined && (symbol.flags & ts.SymbolFlags.Alias)) {
+      symbol = semantics.aliasedSymbol(symbol);
     }
-    const signature = checker.getResolvedSignature(node);
+    const shouldResolveSignature = resolveOverloadSignatures && overloadCalleeNames?.has(calleeName) === true;
+    const signature = shouldResolveSignature ? semantics.resolvedSignature(node) : undefined;
     const resolvedDeclaration = signature?.declaration;
     sites.push({
       calleeName,
@@ -434,6 +764,9 @@ function collectCallSites(node: ts.Node, file: string, sourceFile: ts.SourceFile
 
 /** Collect all comments from a source file. */
 export function collectAllComments(sourceFile: ts.SourceFile): CommentInfo[] {
+  const cached = commentCache.get(sourceFile);
+  if (cached !== undefined) return cached;
+
   const comments: CommentInfo[] = [];
   const source = sourceFile.getFullText();
   const seen = new Set<number>();
@@ -460,5 +793,6 @@ export function collectAllComments(sourceFile: ts.SourceFile): CommentInfo[] {
   }
   visit(sourceFile);
 
+  commentCache.set(sourceFile, comments);
   return comments;
 }

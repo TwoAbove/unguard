@@ -6,6 +6,7 @@ export const noOptionalElementAccess: TSRule = {
   id: "no-optional-element-access",
   severity: "warning",
   message: "Optional element access (?.[]) on a non-nullable type is redundant; use direct access or fix the type upstream",
+  syntaxKinds: [ts.SyntaxKind.ElementAccessExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isElementAccessExpression(node)) return;

@@ -6,6 +6,7 @@ export const noOptionalCall: TSRule = {
   id: "no-optional-call",
   severity: "warning",
   message: "Optional call (?.) on a non-nullable function is redundant; call directly or fix the type upstream",
+  syntaxKinds: [ts.SyntaxKind.CallExpression],
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isCallExpression(node)) return;

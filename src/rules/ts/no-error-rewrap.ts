@@ -7,6 +7,8 @@ export const noErrorRewrap: TSRule = {
   severity: "error",
   message:
     "Re-wrapped error loses the original stack trace and type; use { cause: originalError } to preserve the error chain",
+  syntaxKinds: [ts.SyntaxKind.CatchClause],
+  requiresTypeInfo: false,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isCatchClause(node)) return;

@@ -15,6 +15,14 @@ export interface ProgramGroupConfig {
 
 export interface ProgramGroupOptions {
   expandProjectFiles?: boolean;
+  cache?: ProgramBuildCache;
+}
+
+export interface ProgramBuildCache {
+  sourceFiles: Map<string, ts.SourceFile>;
+  readFiles: Map<string, string | undefined>;
+  fileExists: Map<string, boolean>;
+  directoryExists: Map<string, boolean>;
 }
 
 const defaultOptions: ts.CompilerOptions = {
@@ -30,19 +38,129 @@ function findTsconfig(file: string): string | undefined {
   return ts.findConfigFile(dirname(file), ts.sys.fileExists, "tsconfig.json");
 }
 
-function createProgramForConfig(files: string[], configPath: string | undefined): ts.Program {
+export function createProgramBuildCache(): ProgramBuildCache {
+  return {
+    sourceFiles: new Map(),
+    readFiles: new Map(),
+    fileExists: new Map(),
+    directoryExists: new Map(),
+  };
+}
+
+function createProgramForConfig(
+  files: string[],
+  configPath: string | undefined,
+  cache: ProgramBuildCache | undefined,
+): ts.Program {
   if (configPath) {
     const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
     const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, dirname(configPath));
+    const options = { ...parsed.options, skipLibCheck: true };
     return ts.createProgram({
       rootNames: files,
-      options: { ...parsed.options, skipLibCheck: true },
+      options,
+      host: maybeCachedCompilerHost(options, cache),
     });
   }
-  return ts.createProgram({ rootNames: files, options: defaultOptions });
+  return ts.createProgram({
+    rootNames: files,
+    options: defaultOptions,
+    host: maybeCachedCompilerHost(defaultOptions, cache),
+  });
 }
 
-function expandProjectFiles(group: ProgramGroupConfig): string[] {
+function maybeCachedCompilerHost(
+  options: ts.CompilerOptions,
+  cache: ProgramBuildCache | undefined,
+): ts.CompilerHost | undefined {
+  if (cache === undefined) return undefined;
+  return createCachedCompilerHost(options, cache);
+}
+
+function createCachedCompilerHost(
+  options: ts.CompilerOptions,
+  cache: ProgramBuildCache,
+): ts.CompilerHost {
+  const host = ts.createCompilerHost(options);
+  const baseGetSourceFile = host.getSourceFile.bind(host);
+  const baseReadFile = host.readFile.bind(host);
+  const baseFileExists = host.fileExists.bind(host);
+  const baseDirectoryExists = host.directoryExists?.bind(host);
+
+  function cacheKey(fileName: string): string {
+    return host.getCanonicalFileName(ts.sys.resolvePath(fileName));
+  }
+
+  host.readFile = (fileName) => {
+    const key = cacheKey(fileName);
+    if (cache.readFiles.has(key)) return cache.readFiles.get(key);
+    const text = baseReadFile(fileName);
+    cache.readFiles.set(key, text);
+    return text;
+  };
+
+  host.fileExists = (fileName) => {
+    const key = cacheKey(fileName);
+    const cached = cache.fileExists.get(key);
+    if (cached !== undefined) return cached;
+    const exists = baseFileExists(fileName);
+    cache.fileExists.set(key, exists);
+    return exists;
+  };
+
+  if (baseDirectoryExists !== undefined) {
+    host.directoryExists = (directoryName) => {
+      const key = cacheKey(directoryName);
+      const cached = cache.directoryExists.get(key);
+      if (cached !== undefined) return cached;
+      const exists = baseDirectoryExists(directoryName);
+      cache.directoryExists.set(key, exists);
+      return exists;
+    };
+  }
+
+  host.getSourceFile = (
+    fileName,
+    languageVersionOrOptions,
+    onError,
+    shouldCreateNewSourceFile,
+  ) => {
+    if (!isStableCachedSourceFile(fileName)) {
+      return baseGetSourceFile(fileName, languageVersionOrOptions, onError, shouldCreateNewSourceFile);
+    }
+
+    const key = sourceFileCacheKey(cacheKey(fileName), languageVersionOrOptions);
+    if (!shouldCreateNewSourceFile) {
+      const cached = cache.sourceFiles.get(key);
+      if (cached !== undefined) return cached;
+    }
+
+    const sourceFile = baseGetSourceFile(fileName, languageVersionOrOptions, onError, shouldCreateNewSourceFile);
+    if (sourceFile !== undefined) cache.sourceFiles.set(key, sourceFile);
+    return sourceFile;
+  };
+
+  return host;
+}
+
+function isStableCachedSourceFile(fileName: string): boolean {
+  const normalized = fileName.replaceAll("\\", "/");
+  return normalized.includes("/node_modules/")
+    || /\.d\.[cm]?ts$/.test(normalized)
+    || normalized.endsWith(".json");
+}
+
+function sourceFileCacheKey(
+  fileKey: string,
+  languageVersionOrOptions: ts.ScriptTarget | ts.CreateSourceFileOptions,
+): string {
+  if (typeof languageVersionOrOptions !== "object") {
+    return `${fileKey}\0${languageVersionOrOptions}\0\0`;
+  }
+  return `${fileKey}\0${languageVersionOrOptions.languageVersion}\0${languageVersionOrOptions.impliedNodeFormat ?? ""}\0${languageVersionOrOptions.jsDocParsingMode ?? ""}`;
+}
+
+export function expandProjectFiles(group: ProgramGroupConfig): string[] {
   const configs = [group.configPath, ...(group.expandConfigPaths ?? [])];
   const expanded = new Set(group.scanFiles);
   for (const cp of configs) {
@@ -88,9 +206,10 @@ export function mergeCompatibleGroups(groups: ProgramGroupConfig[]): ProgramGrou
     list.push(group);
   }
 
-  return [...byKey.values()].map((compatible) => {
-    const [primary, ...rest] = compatible;
-    if (!primary) return compatible[0];
+  return [...byKey.values()].flatMap((compatible) => {
+    const primary = compatible[0];
+    if (primary === undefined) return [];
+    const rest = compatible.slice(1);
     if (rest.length === 0) return primary;
     return {
       configPath: primary.configPath,
@@ -128,5 +247,5 @@ export function createProgramForGroup(
   const rootFiles = options.expandProjectFiles
     ? expandProjectFiles(group)
     : group.scanFiles;
-  return createProgramForConfig(rootFiles, group.configPath);
+  return createProgramForConfig(rootFiles, group.configPath, options.cache);
 }
