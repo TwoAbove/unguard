@@ -143,11 +143,9 @@ function createCachedCompilerHost(
   return host;
 }
 
-function isStableCachedSourceFile(fileName: string): boolean {
-  const normalized = fileName.replaceAll("\\", "/");
-  return normalized.includes("/node_modules/")
-    || /\.d\.[cm]?ts$/.test(normalized)
-    || normalized.endsWith(".json");
+function isStableCachedSourceFile(_fileName: string): boolean {
+  // TS binder guards on `!file.locals`, so a shared SourceFile is reused across Programs without re-binding.
+  return true;
 }
 
 function sourceFileCacheKey(

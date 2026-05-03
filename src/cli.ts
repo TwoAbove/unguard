@@ -13,6 +13,8 @@ interface UnguardConfig {
   rules?: RulePolicy;
   failOn?: FailOn;
   severity?: Severity[];
+  concurrency?: number;
+  cache?: boolean;
 }
 
 // @unguard unused-export CLI entry point
@@ -31,6 +33,8 @@ export async function main(argv: string[]): Promise<number> {
       rule: { type: "string", multiple: true, default: [] },
       config: { type: "string" },
       "fail-on": { type: "string" },
+      concurrency: { type: "string" },
+      "no-cache": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
     allowPositionals: true,
@@ -70,12 +74,20 @@ export async function main(argv: string[]): Promise<number> {
     return 1;
   }
 
+  const concurrencyResult = resolveConcurrency(values.concurrency, config?.concurrency);
+  if (!concurrencyResult.ok) {
+    console.error(pc.red(concurrencyResult.message));
+    return 1;
+  }
+
   const paths = cliPaths.length > 0 ? cliPaths : config?.paths ?? [];
   const ignore = [...(config?.ignore ?? []), ...values.ignore];
   const rulePolicy = [
     ...toRulePolicyEntries(config?.rules),
     ...rulePolicyResult.value,
   ];
+
+  const cacheEnabled = values["no-cache"] ? false : config?.cache ?? true;
 
   const execution = await executeScan({
     paths,
@@ -85,6 +97,8 @@ export async function main(argv: string[]): Promise<number> {
     rulePolicy: rulePolicy.length > 0 ? rulePolicy : undefined,
     showSeverities: severityFiltersResult.value.length > 0 ? severityFiltersResult.value : config?.severity,
     failOn: failOnResult.value,
+    concurrency: concurrencyResult.value,
+    cache: cacheEnabled,
   });
 
   const diagnostics = execution.visibleDiagnostics;
@@ -119,6 +133,8 @@ Options:
   --severity <levels>   Filter output by severity (comma-separated and/or repeatable)
   --fail-on <level>     Exit threshold: none, error, warning, info (default: info)
   --format <mode>       Output format: grouped (default) or flat
+  --concurrency <n>     Worker threads for tsconfig groups (default: auto, 1 disables)
+  --no-cache            Disable on-disk diagnostic cache (node_modules/.cache/unguard)
   -h, --help            Show this help
 
 Exit codes:
@@ -308,6 +324,20 @@ function loadConfig(path: string): UnguardConfig {
     config.severity = raw.severity;
   }
 
+  if (raw.concurrency !== undefined) {
+    if (typeof raw.concurrency !== "number" || !Number.isInteger(raw.concurrency) || raw.concurrency < 1) {
+      throw new Error(`Invalid config in ${basename(path)}: "concurrency" must be a positive integer.`);
+    }
+    config.concurrency = raw.concurrency;
+  }
+
+  if (raw.cache !== undefined) {
+    if (typeof raw.cache !== "boolean") {
+      throw new Error(`Invalid config in ${basename(path)}: "cache" must be a boolean.`);
+    }
+    config.cache = raw.cache;
+  }
+
   if (raw.rules !== undefined) {
     if (typeof raw.rules !== "object" || raw.rules === null || Array.isArray(raw.rules)) {
       throw new Error(`Invalid config in ${basename(path)}: "rules" must be an object.`);
@@ -339,4 +369,24 @@ function resolveFailOn(
     return { ok: false, message: `Invalid --fail-on value "${selected}". Use none, error, warning, or info.` };
   }
   return { ok: true, value: selected };
+}
+
+function resolveConcurrency(
+  cliValue: string | undefined,
+  configValue: number | undefined,
+): { ok: true; value: number | undefined } | { ok: false; message: string } {
+  if (cliValue !== undefined) {
+    const parsed = Number(cliValue);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      return { ok: false, message: `Invalid --concurrency value "${cliValue}". Use a positive integer.` };
+    }
+    return { ok: true, value: parsed };
+  }
+  if (configValue !== undefined) {
+    if (!Number.isInteger(configValue) || configValue < 1) {
+      return { ok: false, message: "Invalid concurrency in config: must be a positive integer." };
+    }
+    return { ok: true, value: configValue };
+  }
+  return { ok: true, value: undefined };
 }

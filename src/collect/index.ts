@@ -27,7 +27,7 @@ export interface ProjectIndex {
   callSites: CallSite[];
   imports: ImportEntry[];
   files: Map<string, { source: string; sourceFile: ts.SourceFile }>;
-  /** Whitespace-normalized file content hash → list of file paths */
+  /** Whitespace-normalized file content hash -> list of file paths */
   fileHashes: Map<string, string[]>;
   statementSequences: StatementSequenceRegistry;
   inlineParamTypes: InlineParamTypeRegistry;

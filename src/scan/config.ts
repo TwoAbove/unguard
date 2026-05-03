@@ -36,6 +36,8 @@ export function resolveScanConfig(options: ScanOptions): ResolvedScanConfig {
     showSeverities: normalizeSeveritySet(options.showSeverities),
     failOn: options.failOn ?? DEFAULT_FAIL_ON,
     useGitIgnore: options.useGitIgnore ?? true,
+    concurrency: options.concurrency,
+    cache: options.cache ?? true,
   };
 }
 

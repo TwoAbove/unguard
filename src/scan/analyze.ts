@@ -3,9 +3,15 @@ import type { SourceFile } from "typescript";
 import { collectAllComments, collectProject, collectSourceText, createProjectIndex, type CommentInfo, type ProjectIndexNeeds } from "../collect/index.ts";
 import { isTSRule } from "../rules/types.ts";
 import type { CrossFileRule, Diagnostic, ProjectIndexNeed, Rule, TSRule } from "../rules/types.ts";
-import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup, createProgramBuildCache, expandProjectFiles } from "../typecheck/program.ts";
+import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup, createProgramBuildCache, expandProjectFiles, type ProgramGroupConfig } from "../typecheck/program.ts";
+import { runGroupsInWorkers, workersAvailable, type GroupTask } from "./worker-pool.ts";
 
-export function analyzeFiles(files: string[], rules: Rule[]): Diagnostic[] {
+export interface AnalyzeOptions {
+  /** Maximum number of worker threads. <= 1 disables parallelism. */
+  concurrency?: number;
+}
+
+export async function analyzeFiles(files: string[], rules: Rule[], options: AnalyzeOptions): Promise<Diagnostic[]> {
   const tsRules = rules.filter(isTSRule);
   const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
   const indexNeeds = collectIndexNeeds(crossFileRules);
@@ -17,32 +23,75 @@ export function analyzeFiles(files: string[], rules: Rule[]): Diagnostic[] {
   const groupConfigs = mergeCompatibleGroups(groupFilesByTsconfig(files));
   if (groupConfigs.length === 0) return [];
 
-  const allDiagnostics: Diagnostic[] = [];
-  const allFiles = new Map<string, FileDiagnosticData>();
-  const programCache = createProgramBuildCache();
-
-  // Process each tsconfig group sequentially so only one ts.Program is alive
-  // at a time. The program may load thousands of dependency files for type
-  // context, but analysis only needs to traverse the files requested by the
-  // scan.
-  for (const groupConfig of groupConfigs) {
-    const projectIndex = createProjectIndex();
-    const program = createProgramForGroup(groupConfig, { expandProjectFiles: true, cache: programCache });
-    const allowed = new Set(groupConfig.scanFiles);
-    const collectFiles = indexNeeds.size > 0
-      ? new Set(expandProjectFiles(groupConfig).filter(isAnalyzableSourcePath))
-      : new Set<string>();
-    const { diagnostics } = collectProject(program, tsRules, allowed, {
-      collectFiles,
-      needs: indexNeeds,
-      index: projectIndex,
-    });
-    allDiagnostics.push(...diagnostics);
-    allDiagnostics.push(...runCrossFileRules(crossFileRules, projectIndex, allowed));
-    addFileData(allFiles, projectIndex, allowed);
+  const concurrency = resolveConcurrency(options.concurrency, groupConfigs.length);
+  if (concurrency > 1 && groupConfigs.length > 1 && workersAvailable()) {
+    return await runGroupsViaWorkers(groupConfigs, rules, indexNeeds, concurrency);
   }
 
-  return finalizeDiagnostics(allDiagnostics, allFiles);
+  return runGroupsSerial(groupConfigs, tsRules, crossFileRules, indexNeeds);
+}
+
+function runGroupsSerial(
+  groupConfigs: ProgramGroupConfig[],
+  tsRules: TSRule[],
+  crossFileRules: CrossFileRule[],
+  indexNeeds: ProjectIndexNeeds,
+): Diagnostic[] {
+  const programCache = createProgramBuildCache();
+  const allDiagnostics: Diagnostic[] = [];
+
+  for (const groupConfig of groupConfigs) {
+    const groupDiags = analyzeGroup(groupConfig, tsRules, crossFileRules, indexNeeds, programCache);
+    allDiagnostics.push(...groupDiags);
+  }
+
+  return dedupeDiagnostics(allDiagnostics);
+}
+
+async function runGroupsViaWorkers(
+  groupConfigs: ProgramGroupConfig[],
+  rules: Rule[],
+  indexNeeds: ProjectIndexNeeds,
+  concurrency: number,
+): Promise<Diagnostic[]> {
+  const ruleSpecs = rules.map((rule) => ({ id: rule.id, severity: rule.severity }));
+  const tasks: GroupTask[] = groupConfigs.map((groupConfig, idx) => ({ id: idx, groupConfig }));
+
+  const diagnosticsByTask = await runGroupsInWorkers(tasks, ruleSpecs, [...indexNeeds], concurrency);
+  const allDiagnostics: Diagnostic[] = [];
+  for (const diags of diagnosticsByTask) {
+    allDiagnostics.push(...diags);
+  }
+  return dedupeDiagnostics(allDiagnostics);
+}
+
+/** Run the full analysis pipeline for one tsconfig group. Callable from main thread or worker. */
+export function analyzeGroup(
+  groupConfig: ProgramGroupConfig,
+  tsRules: TSRule[],
+  crossFileRules: CrossFileRule[],
+  indexNeeds: ProjectIndexNeeds,
+  programCache?: ReturnType<typeof createProgramBuildCache>,
+): Diagnostic[] {
+  const projectIndex = createProjectIndex();
+  const program = createProgramForGroup(groupConfig, { expandProjectFiles: true, cache: programCache });
+  const allowed = new Set(groupConfig.scanFiles);
+  const collectFiles = indexNeeds.size > 0
+    ? new Set(expandProjectFiles(groupConfig).filter(isAnalyzableSourcePath))
+    : new Set<string>();
+  const { diagnostics } = collectProject(program, tsRules, allowed, {
+    collectFiles,
+    needs: indexNeeds,
+    index: projectIndex,
+  });
+
+  const groupDiagnostics: Diagnostic[] = [...diagnostics];
+  groupDiagnostics.push(...runCrossFileRules(crossFileRules, projectIndex, allowed));
+
+  const fileData = new Map<string, FileDiagnosticData>();
+  addFileData(fileData, projectIndex, allowed);
+
+  return finalizeDiagnostics(groupDiagnostics, fileData);
 }
 
 function analyzeSourceOnlyFiles(
@@ -166,6 +215,14 @@ function finalizeDiagnostics(
   }
 
   return dedupeDiagnostics(finalized);
+}
+
+function resolveConcurrency(requested: number | undefined, groupCount: number): number {
+  if (requested !== undefined) {
+    if (!Number.isInteger(requested) || requested < 1) return 1;
+    return Math.min(requested, groupCount);
+  }
+  return 1;
 }
 
 interface FileDiagnosticData {

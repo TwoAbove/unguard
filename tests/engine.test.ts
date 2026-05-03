@@ -33,10 +33,10 @@ describe("engine", () => {
     expect(result.diagnostics).toHaveLength(0);
   });
 
-  it("skips declaration files in source-only analysis", () => {
+  it("skips declaration files in source-only analysis", async () => {
     const file = new URL("./fixtures/declaration-file.d.ts", import.meta.url).pathname;
     const rules = allRules.filter((rule) => rule.id === "no-inline-param-type");
-    expect(analyzeFiles([file], rules)).toHaveLength(0);
+    expect(await analyzeFiles([file], rules, {})).toHaveLength(0);
   });
 
   it("keeps project context for symbol-based cross-file rules when scanning one file", async () => {
@@ -193,5 +193,78 @@ describe("engine", () => {
     });
     expect(result.diagnostics).toHaveLength(1);
     expect(result.diagnostics[0]?.severity).toBe("error");
+  });
+});
+
+describe("cache", () => {
+  it("invalidates when active rules change", async () => {
+    const { cacheCovers, computeScanKey } = await import("../src/scan/cache.ts");
+    const { allRules } = await import("../src/rules/index.ts");
+    const baseInput = {
+      unguardVersion: "test",
+      paths: ["src"],
+      ignore: [],
+      strict: false,
+      failOn: "info",
+      showSeverities: null,
+    };
+    const keyA = computeScanKey({ ...baseInput, rules: allRules });
+    const keyB = computeScanKey({ ...baseInput, rules: allRules.slice(0, 5) });
+    expect(keyA).not.toBe(keyB);
+
+    const cached = {
+      version: 1,
+      unguardVersion: "test",
+      scanKey: keyA,
+      fileHashes: { "/foo.ts": "1:1@aaaa" },
+      diagnostics: [],
+      fileCount: 1,
+    };
+    expect(cacheCovers(cached, { unguardVersion: "test", scanKey: keyA }, { "/foo.ts": "1:1@aaaa" })).toBe(true);
+    expect(cacheCovers(cached, { unguardVersion: "test", scanKey: keyB }, { "/foo.ts": "1:1@aaaa" })).toBe(false);
+  });
+
+  it("treats stat-only changes as cache hits when content hash matches", async () => {
+    const { cacheCovers } = await import("../src/scan/cache.ts");
+    const cached = {
+      version: 1,
+      unguardVersion: "test",
+      scanKey: "k",
+      fileHashes: { "/foo.ts": "100:1000@deadbeef" },
+      diagnostics: [],
+      fileCount: 1,
+    };
+    // Same content hash, different stat tag (e.g., after `touch` or `git checkout`)
+    expect(
+      cacheCovers(cached, { unguardVersion: "test", scanKey: "k" }, { "/foo.ts": "100:9999@deadbeef" }),
+    ).toBe(true);
+    // Different content hash -> miss
+    expect(
+      cacheCovers(cached, { unguardVersion: "test", scanKey: "k" }, { "/foo.ts": "100:1000@cafef00d" }),
+    ).toBe(false);
+  });
+
+  it("invalidates when file set changes", async () => {
+    const { cacheCovers } = await import("../src/scan/cache.ts");
+    const cached = {
+      version: 1,
+      unguardVersion: "test",
+      scanKey: "k",
+      fileHashes: { "/foo.ts": "1:1@aaaa", "/bar.ts": "1:1@bbbb" },
+      diagnostics: [],
+      fileCount: 2,
+    };
+    // Removed file
+    expect(
+      cacheCovers(cached, { unguardVersion: "test", scanKey: "k" }, { "/foo.ts": "1:1@aaaa" }),
+    ).toBe(false);
+    // Added file
+    expect(
+      cacheCovers(cached, { unguardVersion: "test", scanKey: "k" }, {
+        "/foo.ts": "1:1@aaaa",
+        "/bar.ts": "1:1@bbbb",
+        "/baz.ts": "1:1@cccc",
+      }),
+    ).toBe(false);
   });
 });

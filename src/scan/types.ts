@@ -21,6 +21,10 @@ export interface ScanOptions {
   showSeverities?: Severity[];
   failOn?: FailOn;
   useGitIgnore?: boolean;
+  /** Worker threads for tsconfig groups. Auto by default; 1 disables. */
+  concurrency?: number;
+  /** On-disk diagnostic cache under `node_modules/.cache/unguard/`. Default: true. */
+  cache?: boolean;
 }
 
 export interface ResolvedScanConfig {
@@ -32,6 +36,8 @@ export interface ResolvedScanConfig {
   showSeverities: Set<Severity> | null;
   failOn: FailOn;
   useGitIgnore: boolean;
+  concurrency: number | undefined;
+  cache: boolean;
 }
 
 export interface RuleDescriptor {

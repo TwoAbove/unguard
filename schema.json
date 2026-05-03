@@ -36,6 +36,15 @@
         "enum": ["info", "warning", "error"]
       },
       "uniqueItems": true
+    },
+    "concurrency": {
+      "description": "Maximum worker threads used to analyze tsconfig groups in parallel. Auto by default; set to 1 to disable.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "cache": {
+      "description": "Enable on-disk diagnostic cache under node_modules/.cache/unguard. Default: true.",
+      "type": "boolean"
     }
   }
 }

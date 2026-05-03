@@ -36,6 +36,8 @@ unguard src --severity=error,warning         # show errors+warnings
 unguard src --fail-on=error                  # fail only on errors
 unguard src --format=flat                    # one-line-per-diagnostic, grepable
 unguard src --format=flat | grep error
+unguard src --concurrency 1                  # disable worker-thread parallelism
+unguard src --no-cache                       # bypass on-disk diagnostic cache
 ```
 
 Add `unguard` to your lint check, especially if code is written by AI.
@@ -56,12 +58,15 @@ Add `unguard` to your lint check, especially if code is written by AI.
     "no-ts-ignore": "error",
     "prefer-*": "off"
   },
-  "failOn": "error"
+  "failOn": "error",
+  "concurrency": 4,
+  "cache": true
 }
 ```
 
 `rules` values can be `off`, `info`, `warning`, or `error`.
 Selectors support:
+
 - exact rule id: `no-ts-ignore`
 - wildcard: `duplicate-*`
 - category: `category:cross-file`
@@ -70,6 +75,7 @@ Selectors support:
 ### Ignore behavior
 
 `unguard` ignores:
+
 - built-in: `node_modules`, `dist`, `.git`, declaration files (`*.d.ts`, `*.d.cts`, `*.d.mts`)
 - generated files: `*.gen.*`, `*.generated.*`
 - project `.gitignore`
@@ -231,6 +237,21 @@ for (const d of execution.visibleDiagnostics) {
   console.log(`${d.file}:${d.line} [${d.ruleId}] ${d.message}`);
 }
 ```
+
+### Caching
+
+unguard caches scan results under `node_modules/.cache/unguard/`. On a warm
+run, if every file's content hash and the active rule set are unchanged,
+unguard returns cached diagnostics without building a TypeScript program.
+The cache invalidates automatically on:
+
+- file content changes (mtime-only changes are ignored — `git checkout` and `git stash` stay cache hits)
+- changes to active rules or rule severities
+- changes to scan paths, ignore globs, or `failOn`
+- unguard version upgrades
+
+Disable with `--no-cache` (CLI), `cache: false` (config), or pass
+`cache: false` to `executeScan({ cache: false })` programmatically.
 
 ## License
 
