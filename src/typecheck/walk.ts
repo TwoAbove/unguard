@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { Diagnostic, SemanticServices, TSRule, TSVisitContext } from "../rules/types.ts";
+import type { Diagnostic, FixEdit, SemanticServices, TSRule, TSVisitContext } from "../rules/types.ts";
 import { isNullableType, isFromNodeModules } from "./utils.ts";
 
 export function buildContext(
@@ -9,6 +9,7 @@ export function buildContext(
   source: string,
   filename: string,
   diagnostics: Diagnostic[],
+  compilerOptions: ts.CompilerOptions,
 ): TSVisitContext {
   const checker = semantics.checker;
   return {
@@ -17,8 +18,9 @@ export function buildContext(
     sourceFile,
     checker,
     semantics,
+    compilerOptions,
 
-    report(node: ts.Node, message?: string) {
+    report(node: ts.Node, message?: string, fix?: FixEdit) {
       const { line, character } = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile));
       diagnostics.push({
         ruleId: rule.id,
@@ -27,6 +29,7 @@ export function buildContext(
         file: filename,
         line: line + 1,
         column: character + 1,
+        ...(fix !== undefined ? { fix } : {}),
       });
     },
 

@@ -32,7 +32,11 @@ export const noRedundantCast: TSRule = {
       ctx.semantics.isTypeAssignableTo(exprType, targetType) &&
       ctx.semantics.isTypeAssignableTo(targetType, exprType)
     ) {
-      ctx.report(node);
+      ctx.report(node, undefined, {
+        start: node.getStart(ctx.sourceFile),
+        end: node.getEnd(),
+        text: node.expression.getText(ctx.sourceFile),
+      });
     }
   },
 };

@@ -1,22 +1,11 @@
 import * as ts from "typescript";
 import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
 import type { FunctionEntry } from "../../collect/function-registry.ts";
+import { asSignatureLike, type SignatureLike } from "../../typecheck/utils.ts";
 
 interface TrivialCallTarget {
   calleeName: string;
-}
-
-function getFunctionBody(node: ts.Node): ts.Block | ts.Expression | undefined {
-  if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) {
-    return node.body;
-  }
-  if (ts.isArrowFunction(node)) {
-    return node.body;
-  }
-  if (ts.isMethodDeclaration(node)) {
-    return node.body;
-  }
-  return undefined;
+  callExpr: ts.CallExpression;
 }
 
 function getCalleeName(expr: ts.Expression): string | undefined {
@@ -25,8 +14,24 @@ function getCalleeName(expr: ts.Expression): string | undefined {
   return undefined;
 }
 
+/**
+ * Structural fences that disqualify a wrapper from being "trivial" regardless
+ * of body shape. Each represents a type/contract transformation that's lost
+ * if a caller switches to the wrappee directly.
+ */
+function hasTypeLevelTransformation(fn: SignatureLike): boolean {
+  // Wrapper specializes a type predicate (e.g. `x is RangeError` vs `x is Error`).
+  if (fn.type !== undefined && ts.isTypePredicateNode(fn.type)) return true;
+  // Wrapper introduces its own generic parameters — the type contract differs.
+  return fn.typeParameters !== undefined && fn.typeParameters.length > 0;
+}
+
 function getTrivialCallTarget(fn: FunctionEntry): TrivialCallTarget | null {
-  const body = getFunctionBody(fn.node);
+  const signature = asSignatureLike(fn.node);
+  if (signature === null) return null;
+  if (hasTypeLevelTransformation(signature)) return null;
+
+  const body = signature.body;
   if (!body) return null;
 
   let callExpr: ts.CallExpression | undefined;
@@ -44,42 +49,56 @@ function getTrivialCallTarget(fn: FunctionEntry): TrivialCallTarget | null {
     callExpr = body;
   }
 
+  // If the call carries explicit type arguments, the wrapper is specializing the
+  // wrappee's generics at the call site — type-level transformation.
+  if (callExpr.typeArguments !== undefined && callExpr.typeArguments.length > 0) return null;
+
   const calleeName = getCalleeName(callExpr.expression);
   if (!calleeName) return null;
 
-  // All arguments must be plain identifiers matching the function's own param names
+  // Arguments must be plain identifiers matching the wrapper's param list IN ORDER
+  // (no reordering — that's a semantic transformation) and pass every param
+  // position (no skipping — wrapper.params.length === call.arguments.length).
   const paramNames = fn.params.map((p) => p.name);
   const args = callExpr.arguments;
-
-  // Args must be a subset of params (in order or not), but every arg must be a plain param reference
-  for (const arg of args) {
-    if (!ts.isIdentifier(arg)) return null;
-    if (!paramNames.includes(arg.text)) return null;
+  if (args.length !== paramNames.length) return null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === undefined || !ts.isIdentifier(arg)) return null;
+    if (arg.text !== paramNames[i]) return null;
   }
 
-  return { calleeName };
+  return { calleeName, callExpr };
 }
 
 export const trivialWrapper: CrossFileRule = {
   id: "trivial-wrapper",
-  severity: "info",
+  severity: "warning",
   message:
     "Function is a trivial wrapper that delegates without transformation; consider using the target directly",
-  requires: ["functions"],
+  requires: ["functions", "functionSymbols", "callSites", "callSiteSymbols"],
 
   analyze(project: ProjectIndex): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
-    const knownFunctions = new Set(
-      project.functions.getAll().map((f) => f.name),
-    );
+    const projectFnSymbols = new Set<ts.Symbol>();
+    for (const f of project.functions.getAll()) {
+      if (f.symbol !== undefined) projectFnSymbols.add(f.symbol);
+    }
+    const callSiteSymbols = new Map<ts.CallExpression, ts.Symbol>();
+    for (const site of project.callSites) {
+      if (site.symbol !== undefined) callSiteSymbols.set(site.node, site.symbol);
+    }
 
     for (const fn of project.functions.getAll()) {
       const target = getTrivialCallTarget(fn);
       if (!target) continue;
-      // Don't flag if the callee isn't a known project function
-      if (!knownFunctions.has(target.calleeName)) continue;
-      // Don't flag if wrapper and target have the same name (re-export pattern)
-      if (fn.name === target.calleeName) continue;
+      // The callee must resolve, by symbol identity, to a project function.
+      // Name matching would misattribute across files and miss aliased imports.
+      const calleeSymbol = callSiteSymbols.get(target.callExpr);
+      if (calleeSymbol === undefined) continue;
+      if (!projectFnSymbols.has(calleeSymbol)) continue;
+      // Self-delegation (recursion / re-export binding) is not a wrapper.
+      if (fn.symbol !== undefined && calleeSymbol === fn.symbol) continue;
 
       diagnostics.push({
         ruleId: this.id,

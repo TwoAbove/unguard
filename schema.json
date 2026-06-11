@@ -18,10 +18,32 @@
       "items": { "type": "string" }
     },
     "rules": {
-      "description": "Rule severity overrides. Keys are selectors (rule id, wildcard, category:<name>, tag:<name>).",
+      "description": "Rule severity overrides. Keys are selectors (rule id, wildcard, category:<name>, tag:<name>, confidence:<proven|heuristic>).",
       "type": "object",
       "additionalProperties": {
         "enum": ["off", "info", "warning", "error"]
+      }
+    },
+    "overrides": {
+      "description": "Path-scoped rule policies. Each entry applies its rules to diagnostics in files matching the globs (gitignore syntax, relative to the working directory). Later entries win; off drops the diagnostic.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["files", "rules"],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": {
+              "enum": ["off", "info", "warning", "error"]
+            }
+          }
+        }
       }
     },
     "failOn": {

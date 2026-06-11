@@ -3,10 +3,16 @@ import { createHash } from "node:crypto";
 import { TypeRegistry } from "./type-registry.ts";
 import { FunctionRegistry, type FunctionEntry, type ParamInfo } from "./function-registry.ts";
 import { ConstantRegistry } from "./constant-registry.ts";
-import { analyzeFunctionBody, hashText, normalizeText, type FunctionBodyAnalysis } from "../utils/hash.ts";
-import { StatementSequenceRegistry, type StatementSequenceEntry } from "./statement-sequence-registry.ts";
+import {
+  analyzeFunctionBody,
+  hashText,
+  normalizeText,
+  stripCommentsAndWhitespace,
+  type FunctionBodyAnalysis,
+} from "../utils/hash.ts";
+import { StatementSequenceRegistry, type StatementInBlock } from "./statement-sequence-registry.ts";
 import { InlineParamTypeRegistry } from "./inline-type-registry.ts";
-import type { Diagnostic, ProjectIndexNeed, SemanticServices, TSRule, TSVisitContext } from "../rules/types.ts";
+import type { Diagnostic, FixEdit, ProjectIndexNeed, SemanticServices, TSRule, TSVisitContext } from "../rules/types.ts";
 import { buildContext } from "../typecheck/walk.ts";
 import { isInlineParamType } from "../typecheck/utils.ts";
 import { SemanticCache } from "../typecheck/semantic-cache.ts";
@@ -68,6 +74,13 @@ export interface ImportEntry {
   localName: string;
   importedName: string;
   source: string;
+  /**
+   * The module specifier resolved to a project source file via the checker.
+   * Handles tsconfig path aliases and workspace packages that textual
+   * resolution cannot. Absent in source-only mode or when the specifier
+   * resolves outside the program (npm package, declaration file).
+   */
+  resolvedFile?: string;
 }
 
 interface RuleContext {
@@ -171,8 +184,9 @@ function buildSyntaxContext(
     sourceFile,
     checker,
     semantics,
+    compilerOptions: {},
 
-    report(node: ts.Node, message?: string) {
+    report(node: ts.Node, message?: string, fix?: FixEdit) {
       const { line, character } = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile));
       diagnostics.push({
         ruleId: rule.id,
@@ -181,6 +195,7 @@ function buildSyntaxContext(
         file: filename,
         line: line + 1,
         column: character + 1,
+        ...(fix !== undefined ? { fix } : {}),
       });
     },
 
@@ -241,6 +256,7 @@ export function collectProject(
   const index = options.index ?? createProjectIndex();
   const needs = options.needs ?? ALL_PROJECT_INDEX_NEEDS;
   const checker = program.getTypeChecker();
+  const compilerOptions = program.getCompilerOptions();
   const semantics = new SemanticCache(checker);
   const diagnostics: Diagnostic[] = [];
   const overloadCalleeNames = needs.has("overloadCallSignatures")
@@ -267,13 +283,13 @@ export function collectProject(
     const ruleDispatch = isReportable
       ? buildRuleDispatch(tsRules?.map((rule) => ({
           rule,
-          ctx: buildContext(rule, sourceFile, semantics, source, file, diagnostics),
+          ctx: buildContext(rule, sourceFile, semantics, source, file, diagnostics, compilerOptions),
         })) ?? [])
       : undefined;
 
     function visit(node: ts.Node): void {
       if (shouldCollect) {
-        collectIndexNode(node, file, sourceFile, semantics, index, needs, overloadCalleeNames);
+        collectIndexNode(node, file, sourceFile, semantics, index, needs, overloadCalleeNames, checker);
       }
       if (ruleDispatch) {
         visitRuleContexts(node, ruleDispatch);
@@ -294,6 +310,8 @@ function collectIndexNode(
   index: ProjectIndex,
   needs: ProjectIndexNeeds,
   overloadCalleeNames?: Set<string>,
+  /** Absent in source-only mode; module specifiers stay textually resolved. */
+  checker?: ts.TypeChecker,
 ): void {
   switch (node.kind) {
     case ts.SyntaxKind.TypeAliasDeclaration:
@@ -342,7 +360,7 @@ function collectIndexNode(
     case ts.SyntaxKind.ImportDeclaration:
     case ts.SyntaxKind.ExportDeclaration:
       if (!needs.has("imports")) return;
-      collectImports(node, file, index.imports);
+      collectImports(node, file, index.imports, checker);
       return;
   }
 }
@@ -430,30 +448,43 @@ function collectOverloadCalleeNames(
 }
 
 function hasNonPublicModifier(node: ts.Node): boolean {
-  if (!ts.canHaveModifiers(node)) return false;
-  const mods = ts.getModifiers(node);
-  if (mods === undefined) return false;
+  const mods = modifiersOf(node);
   return mods.some(
     (m) => m.kind === ts.SyntaxKind.PrivateKeyword || m.kind === ts.SyntaxKind.ProtectedKeyword,
   );
 }
 
 function isExported(node: ts.Node): boolean {
-  if (!ts.canHaveModifiers(node)) return false;
+  return modifiersOf(node).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+}
+
+function isExportedAsDefault(node: ts.Node): boolean {
+  const mods = modifiersOf(node);
+  const hasExport = mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  const hasDefault = mods.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword);
+  return hasExport && hasDefault;
+}
+
+function modifiersOf(node: ts.Node): readonly ts.Modifier[] {
+  if (!ts.canHaveModifiers(node)) return [];
   const mods = ts.getModifiers(node);
-  if (mods === undefined) return false;
-  return mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  return mods ?? [];
 }
 
 function collectTypes(node: ts.Node, file: string, sourceFile: ts.SourceFile, registry: TypeRegistry): void {
   if (ts.isTypeAliasDeclaration(node)) {
-    const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
-    registry.add(node.name.text, file, line, node.type, sourceFile, isExported(node));
+    const { line, column } = lineColumnAt(sourceFile, node);
+    registry.add(node.name.text, file, line, column, node.type, sourceFile, isExported(node));
   }
   if (ts.isInterfaceDeclaration(node)) {
-    const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
-    registry.add(node.name.text, file, line, node, sourceFile, isExported(node));
+    const { line, column } = lineColumnAt(sourceFile, node);
+    registry.add(node.name.text, file, line, column, node, sourceFile, isExported(node));
   }
+}
+
+function lineColumnAt(sourceFile: ts.SourceFile, node: ts.Node): { line: number; column: number } {
+  const pos = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile));
+  return { line: pos.line + 1, column: pos.character + 1 };
 }
 
 function isConstantValue(node: ts.Node): boolean {
@@ -474,8 +505,8 @@ function collectConstants(node: ts.Node, file: string, sourceFile: ts.SourceFile
     if (!isConstantValue(decl.initializer)) continue;
     const valueText = decl.initializer.getText(sourceFile).replace(/\s+/g, " ").trim();
     const valueHash = createHash("sha256").update(valueText).digest("hex").slice(0, 16);
-    const line = ts.getLineAndCharacterOfPosition(sourceFile, decl.getStart(sourceFile)).line + 1;
-    registry.add({ name: decl.name.text, file, line, valueHash, valueText, exported });
+    const { line, column } = lineColumnAt(sourceFile, decl);
+    registry.add({ name: decl.name.text, file, line, column, valueHash, valueText, exported });
   }
 }
 
@@ -486,10 +517,10 @@ function buildFunctionEntry(
   file: string,
   lineNode: ts.Node,
   name: string,
-  extra: Partial<Pick<FunctionEntry, "exported" | "symbol" | "className" | "implementsInterface" | "node">>,
+  extra: Partial<Pick<FunctionEntry, "exported" | "exportedAsDefault" | "symbol" | "className" | "implementsInterface" | "node">>,
   bodyAnalysis?: FunctionBodyAnalysis,
 ): FunctionEntry {
-  const line = ts.getLineAndCharacterOfPosition(sourceFile, lineNode.getStart(sourceFile)).line + 1;
+  const { line, column } = lineColumnAt(sourceFile, lineNode);
   const params = extractParams(parameters, sourceFile);
   const paramNames = params.map((p) => p.name);
   const analysis = bodyAnalysis ?? analyzeFunctionBody(body, sourceFile, paramNames);
@@ -497,6 +528,7 @@ function buildFunctionEntry(
     name,
     file,
     line,
+    column,
     hash: analysis.hash,
     normalizedHash: analysis.normalizedHash,
     params,
@@ -518,7 +550,10 @@ function collectFunctions(
 ): void {
   if (ts.isFunctionDeclaration(node) && node.name && node.body) {
     registry.add(buildFunctionEntry(node.body, node.parameters, sourceFile, file, node, node.name.text, {
-      exported: isExported(node), symbol: resolveSymbols ? semantics.symbolAtLocation(node.name) : undefined, node,
+      exported: isExported(node) || isExportedAsDefault(node),
+      exportedAsDefault: isExportedAsDefault(node),
+      symbol: resolveSymbols ? semantics.symbolAtLocation(node.name) : undefined,
+      node,
     }));
   }
 
@@ -567,15 +602,13 @@ function collectFunctions(
       // Already collected above
     }
     else {
-      const body = ts.isArrowFunction(node) ? node.body : node.body;
-      if (body) {
-        const MIN_ANON_BODY = 64;
-        const params = extractParams(node.parameters, sourceFile);
-        const bodyAnalysis = analyzeFunctionBody(body, sourceFile, params.map((p) => p.name));
-        if (bodyAnalysis.bodyLength >= MIN_ANON_BODY) {
-          const name = deriveAnonymousName(node, sourceFile);
-          registry.add(buildFunctionEntry(body, node.parameters, sourceFile, file, node, name, { node }, bodyAnalysis));
-        }
+      const body = node.body;
+      const MIN_ANON_BODY = 64;
+      const params = extractParams(node.parameters, sourceFile);
+      const bodyAnalysis = analyzeFunctionBody(body, sourceFile, params.map((p) => p.name));
+      if (bodyAnalysis.bodyLength >= MIN_ANON_BODY) {
+        const name = deriveAnonymousName(node, sourceFile);
+        registry.add(buildFunctionEntry(body, node.parameters, sourceFile, file, node, name, { node }, bodyAnalysis));
       }
     }
   }
@@ -637,11 +670,12 @@ function deriveAnonymousName(node: ts.ArrowFunction | ts.FunctionExpression, sou
   return `<anonymous>:${line}`;
 }
 
-function collectImports(node: ts.Node, file: string, imports: ImportEntry[]): void {
+function collectImports(node: ts.Node, file: string, imports: ImportEntry[], checker: ts.TypeChecker | undefined): void {
   if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
     const moduleSource = node.moduleSpecifier.text;
     const clause = node.importClause;
     if (!clause) return;
+    const resolvedFile = resolveModuleSpecifier(node.moduleSpecifier, checker);
 
     // Default import
     if (clause.name) {
@@ -650,6 +684,7 @@ function collectImports(node: ts.Node, file: string, imports: ImportEntry[]): vo
         localName: clause.name.text,
         importedName: "default",
         source: moduleSource,
+        resolvedFile,
       });
     }
 
@@ -661,14 +696,27 @@ function collectImports(node: ts.Node, file: string, imports: ImportEntry[]): vo
           localName: el.name.text,
           importedName: el.propertyName ? el.propertyName.text : el.name.text,
           source: moduleSource,
+          resolvedFile,
         });
       }
+    }
+
+    // Namespace import: import * as ns from "./mod" — every export reachable
+    if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+      imports.push({
+        file,
+        localName: clause.namedBindings.name.text,
+        importedName: "*",
+        source: moduleSource,
+        resolvedFile,
+      });
     }
   }
 
   // Re-exports: export { x } from "./mod"
   if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
     const moduleSource = node.moduleSpecifier.text;
+    const resolvedFile = resolveModuleSpecifier(node.moduleSpecifier, checker);
     if (node.exportClause && ts.isNamedExports(node.exportClause)) {
       for (const el of node.exportClause.elements) {
         imports.push({
@@ -676,10 +724,30 @@ function collectImports(node: ts.Node, file: string, imports: ImportEntry[]): vo
           localName: el.name.text,
           importedName: el.propertyName ? el.propertyName.text : el.name.text,
           source: moduleSource,
+          resolvedFile,
         });
       }
     }
+    // export * from "./mod" — every export reachable through the barrel
+    if (!node.exportClause) {
+      imports.push({ file, localName: "*", importedName: "*", source: moduleSource, resolvedFile });
+    }
   }
+}
+
+/**
+ * Resolve a module specifier to its source file through the program's own
+ * module resolution (path aliases, baseUrl, workspace packages included).
+ * Declaration files are excluded: an import that lands in `.d.ts` points at
+ * built output, not at a project source file.
+ */
+function resolveModuleSpecifier(specifier: ts.StringLiteral, checker: ts.TypeChecker | undefined): string | undefined {
+  if (checker === undefined) return undefined;
+  const moduleSymbol = checker.getSymbolAtLocation(specifier);
+  const declaration = moduleSymbol?.valueDeclaration ?? moduleSymbol?.declarations?.[0];
+  if (declaration === undefined || !ts.isSourceFile(declaration)) return undefined;
+  if (declaration.isDeclarationFile) return undefined;
+  return declaration.fileName;
 }
 
 function collectStatementSequences(
@@ -690,26 +758,25 @@ function collectStatementSequences(
 ): void {
   if (!ts.isBlock(node)) return;
   const stmts = node.statements;
-  const n = stmts.length;
-  if (n < 3) return;
-  const MAX_WINDOW = Math.min(n, 5);
-  for (let size = 3; size <= MAX_WINDOW; size++) {
-    for (let start = 0; start + size <= n; start++) {
-      const window = stmts.slice(start, start + size);
-      const texts = window.map((s) => s.getText(sourceFile));
-      const joined = texts.join("\n");
-      const normalized = normalizeText(joined);
-      if (normalized.length < 128) continue;
-      const hash = hashText(joined.replace(/\s+/g, " ").trim());
-      const normalizedHash = hashText(normalized);
-      const firstStmt = window[0];
-      const lastStmt = window[window.length - 1];
-      if (firstStmt === undefined || lastStmt === undefined) continue;
-      const line = ts.getLineAndCharacterOfPosition(sourceFile, firstStmt.getStart(sourceFile)).line + 1;
-      const endLine = ts.getLineAndCharacterOfPosition(sourceFile, lastStmt.getEnd()).line + 1;
-      registry.add({ file, line, endLine, hash, normalizedHash, statementCount: size, normalizedBodyLength: normalized.length });
-    }
+  if (stmts.length < 2) return;
+
+  const collected: StatementInBlock[] = [];
+  for (const stmt of stmts) {
+    const raw = stmt.getText(sourceFile);
+    const stripped = stripCommentsAndWhitespace(raw);
+    if (stripped.length === 0) continue;
+    const normalized = normalizeText(raw);
+    const { line, column } = lineColumnAt(sourceFile, stmt);
+    const endLine = ts.getLineAndCharacterOfPosition(sourceFile, stmt.getEnd()).line + 1;
+    collected.push({
+      hash: hashText(stripped),
+      line,
+      column,
+      endLine,
+      normalizedLength: normalized.length,
+    });
   }
+  registry.addBlock(file, collected);
 }
 
 function collectInlineParamTypes(
@@ -719,8 +786,8 @@ function collectInlineParamTypes(
   registry: InlineParamTypeRegistry,
 ): void {
   if (!isInlineParamType(node)) return;
-  const line = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1;
-  registry.add(file, line, node as ts.TypeLiteralNode, sourceFile);
+  const { line, column } = lineColumnAt(sourceFile, node);
+  registry.add(file, line, column, node as ts.TypeLiteralNode, sourceFile);
 }
 
 function collectCallSites(

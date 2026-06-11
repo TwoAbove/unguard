@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { SourceFile } from "typescript";
+import * as ts from "typescript";
 import { collectAllComments, collectProject, collectSourceText, createProjectIndex, type CommentInfo, type ProjectIndexNeeds } from "../collect/index.ts";
 import { isTSRule } from "../rules/types.ts";
 import type { CrossFileRule, Diagnostic, ProjectIndexNeed, Rule, TSRule } from "../rules/types.ts";
@@ -31,6 +31,22 @@ export async function analyzeFiles(files: string[], rules: Rule[], options: Anal
   return runGroupsSerial(groupConfigs, tsRules, crossFileRules, indexNeeds);
 }
 
+/** A cross-file rule that merges facts across tsconfig groups before judging. */
+type GlobalCrossFileRule = CrossFileRule & {
+  collectGlobalFacts: NonNullable<CrossFileRule["collectGlobalFacts"]>;
+  finalizeGlobal: NonNullable<CrossFileRule["finalizeGlobal"]>;
+};
+
+function isGlobalRule(rule: CrossFileRule): rule is GlobalCrossFileRule {
+  return rule.collectGlobalFacts !== undefined && rule.finalizeGlobal !== undefined;
+}
+
+export interface GroupAnalysisResult {
+  diagnostics: Diagnostic[];
+  /** ruleId -> structuredClone-safe facts from rules that merge across groups. */
+  globalFacts: Record<string, unknown>;
+}
+
 function runGroupsSerial(
   groupConfigs: ProgramGroupConfig[],
   tsRules: TSRule[],
@@ -39,12 +55,15 @@ function runGroupsSerial(
 ): Diagnostic[] {
   const programCache = createProgramBuildCache();
   const allDiagnostics: Diagnostic[] = [];
+  const factsByRule = new Map<string, unknown[]>();
 
   for (const groupConfig of groupConfigs) {
-    const groupDiags = analyzeGroup(groupConfig, tsRules, crossFileRules, indexNeeds, programCache);
-    allDiagnostics.push(...groupDiags);
+    const result = analyzeGroup(groupConfig, tsRules, crossFileRules, indexNeeds, programCache);
+    allDiagnostics.push(...result.diagnostics);
+    addGroupFacts(factsByRule, result.globalFacts);
   }
 
+  allDiagnostics.push(...annotateGlobalDiagnostics(mergeGlobalRuleDiagnostics(crossFileRules, factsByRule)));
   return dedupeDiagnostics(allDiagnostics);
 }
 
@@ -57,12 +76,60 @@ async function runGroupsViaWorkers(
   const ruleSpecs = rules.map((rule) => ({ id: rule.id, severity: rule.severity }));
   const tasks: GroupTask[] = groupConfigs.map((groupConfig, idx) => ({ id: idx, groupConfig }));
 
-  const diagnosticsByTask = await runGroupsInWorkers(tasks, ruleSpecs, [...indexNeeds], concurrency);
+  const resultsByTask = await runGroupsInWorkers(tasks, ruleSpecs, [...indexNeeds], concurrency);
   const allDiagnostics: Diagnostic[] = [];
-  for (const diags of diagnosticsByTask) {
-    allDiagnostics.push(...diags);
+  const factsByRule = new Map<string, unknown[]>();
+  for (const result of resultsByTask) {
+    allDiagnostics.push(...result.diagnostics);
+    addGroupFacts(factsByRule, result.globalFacts);
   }
+
+  const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
+  allDiagnostics.push(...annotateGlobalDiagnostics(mergeGlobalRuleDiagnostics(crossFileRules, factsByRule)));
   return dedupeDiagnostics(allDiagnostics);
+}
+
+function addGroupFacts(factsByRule: Map<string, unknown[]>, globalFacts: Record<string, unknown>): void {
+  for (const [ruleId, facts] of Object.entries(globalFacts)) {
+    let list = factsByRule.get(ruleId);
+    if (list === undefined) {
+      list = [];
+      factsByRule.set(ruleId, list);
+    }
+    list.push(facts);
+  }
+}
+
+function mergeGlobalRuleDiagnostics(
+  crossFileRules: CrossFileRule[],
+  factsByRule: Map<string, unknown[]>,
+): Diagnostic[] {
+  const merged: Diagnostic[] = [];
+  for (const rule of crossFileRules.filter(isGlobalRule)) {
+    const facts = factsByRule.get(rule.id);
+    if (facts === undefined || facts.length === 0) continue;
+    merged.push(...rule.finalizeGlobal(facts));
+  }
+  return merged;
+}
+
+/**
+ * Suppression comments (`@unguard <rule>`) live in source the per-group file
+ * data no longer holds by the time merged diagnostics exist, so re-parse just
+ * the flagged files. The set is small: only files with findings.
+ */
+function annotateGlobalDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
+  if (diagnostics.length === 0) return diagnostics;
+  const fileData = new Map<string, FileDiagnosticData>();
+  for (const diagnostic of diagnostics) {
+    if (fileData.has(diagnostic.file)) continue;
+    const source = readFileSync(diagnostic.file, "utf8");
+    fileData.set(diagnostic.file, {
+      source,
+      sourceFile: ts.createSourceFile(diagnostic.file, source, ts.ScriptTarget.Latest, true),
+    });
+  }
+  return finalizeDiagnostics(diagnostics, fileData);
 }
 
 /** Run the full analysis pipeline for one tsconfig group. Callable from main thread or worker. */
@@ -72,26 +139,49 @@ export function analyzeGroup(
   crossFileRules: CrossFileRule[],
   indexNeeds: ProjectIndexNeeds,
   programCache?: ReturnType<typeof createProgramBuildCache>,
-): Diagnostic[] {
+): GroupAnalysisResult {
   const projectIndex = createProjectIndex();
   const program = createProgramForGroup(groupConfig, { expandProjectFiles: true, cache: programCache });
   const allowed = new Set(groupConfig.scanFiles);
   const collectFiles = indexNeeds.size > 0
     ? new Set(expandProjectFiles(groupConfig).filter(isAnalyzableSourcePath))
     : new Set<string>();
-  const { diagnostics } = collectProject(program, tsRules, allowed, {
+  const runnableTsRules = filterRulesForCompilerOptions(tsRules, program.getCompilerOptions());
+  const { diagnostics } = collectProject(program, runnableTsRules, allowed, {
     collectFiles,
     needs: indexNeeds,
     index: projectIndex,
   });
 
   const groupDiagnostics: Diagnostic[] = [...diagnostics];
-  groupDiagnostics.push(...runCrossFileRules(crossFileRules, projectIndex, allowed));
+  groupDiagnostics.push(...runCrossFileRules(crossFileRules.filter((r) => !isGlobalRule(r)), projectIndex, allowed));
+
+  const globalFacts: Record<string, unknown> = {};
+  for (const rule of crossFileRules.filter(isGlobalRule)) {
+    globalFacts[rule.id] = rule.collectGlobalFacts(projectIndex, { reportableFiles: allowed });
+  }
 
   const fileData = new Map<string, FileDiagnosticData>();
   addFileData(fileData, projectIndex, allowed);
 
-  return finalizeDiagnostics(groupDiagnostics, fileData);
+  return { diagnostics: finalizeDiagnostics(groupDiagnostics, fileData), globalFacts };
+}
+
+/**
+ * Without strictNullChecks the checker erases null/undefined from every type,
+ * so nullability-driven rules would report each load-bearing guard as dead
+ * code. Skipping them (loudly) is the only honest behavior.
+ */
+function filterRulesForCompilerOptions(tsRules: TSRule[], options: ts.CompilerOptions): TSRule[] {
+  const strictNullChecks = options.strictNullChecks ?? options.strict ?? false;
+  if (strictNullChecks) return tsRules;
+  const skipped = tsRules.filter((rule) => rule.requiresStrictNullChecks === true);
+  if (skipped.length > 0) {
+    console.warn(
+      `unguard: strictNullChecks is off for this tsconfig group; skipped ${skipped.length} nullability rules (${skipped.map((r) => r.id).join(", ")}). Enable strictNullChecks to run them.`,
+    );
+  }
+  return tsRules.filter((rule) => rule.requiresStrictNullChecks !== true);
 }
 
 function analyzeSourceOnlyFiles(
@@ -102,6 +192,7 @@ function analyzeSourceOnlyFiles(
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const allFiles = new Map<string, FileDiagnosticData>();
+  const factsByRule = new Map<string, unknown[]>();
 
   const groupConfigs = mergeCompatibleGroups(groupFilesByTsconfig(files));
   for (const groupConfig of groupConfigs) {
@@ -120,9 +211,16 @@ function analyzeSourceOnlyFiles(
       diagnostics.push(...result.diagnostics);
     }
 
-    diagnostics.push(...runCrossFileRules(crossFileRules, projectIndex, allowed));
+    diagnostics.push(...runCrossFileRules(crossFileRules.filter((r) => !isGlobalRule(r)), projectIndex, allowed));
+    for (const rule of crossFileRules.filter(isGlobalRule)) {
+      addGroupFacts(factsByRule, { [rule.id]: rule.collectGlobalFacts(projectIndex, { reportableFiles: allowed }) });
+    }
     addFileData(allFiles, projectIndex, allowed);
   }
+
+  // Merged diagnostics point at allowed files, whose data `allFiles` already
+  // holds — the shared finalize below annotates them with everything else.
+  diagnostics.push(...mergeGlobalRuleDiagnostics(crossFileRules, factsByRule));
 
   return finalizeDiagnostics(diagnostics, allFiles);
 }
@@ -227,7 +325,7 @@ function resolveConcurrency(requested: number | undefined, groupCount: number): 
 
 interface FileDiagnosticData {
   source: string;
-  sourceFile: SourceFile;
+  sourceFile: ts.SourceFile;
 }
 
 /**

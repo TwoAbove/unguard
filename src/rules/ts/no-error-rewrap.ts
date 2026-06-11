@@ -23,16 +23,41 @@ export const noErrorRewrap: TSRule = {
 function findRewraps(block: ts.Block, catchName: string, ctx: TSVisitContext): void {
   function visit(node: ts.Node): void {
     if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node)) return;
-    if (ts.isThrowStatement(node) && node.expression && ts.isNewExpression(node.expression)) {
-      const args = node.expression.arguments;
-      if (args && args.length > 0 && referencesName(args, catchName) && !hasCauseArg(args)) {
-        ctx.report(node);
+    if (ts.isThrowStatement(node) && node.expression) {
+      if (ts.isNewExpression(node.expression)) {
+        const args = node.expression.arguments;
+        if (args && args.length > 0 && referencesName(args, catchName) && !hasCauseArg(args)) {
+          ctx.report(node);
+        }
+        return;
       }
-      return;
+      // Call form: `throw Error(e.message)`. Only the lossy projection is
+      // flagged — passing the error whole (`throw wrap(e)`) hands it off to
+      // a callee that may preserve it, the same contract trust
+      // no-swallowed-catch extends.
+      if (ts.isCallExpression(node.expression)) {
+        const args = node.expression.arguments;
+        if (
+          args.length > 0 &&
+          args.some((arg) => referencesPropertyOf(arg, catchName)) &&
+          !hasCauseArg(args)
+        ) {
+          ctx.report(node);
+        }
+        return;
+      }
     }
     ts.forEachChild(node, visit);
   }
   ts.forEachChild(block, visit);
+}
+
+/** Node reads a property of `name` (e.g. `e.message`) somewhere in its tree. */
+function referencesPropertyOf(node: ts.Node, name: string): boolean {
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === name) {
+    return true;
+  }
+  return ts.forEachChild(node, (child) => referencesPropertyOf(child, name) || undefined) ?? false;
 }
 
 function referencesName(args: readonly ts.Expression[], name: string): boolean {

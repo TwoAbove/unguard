@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { isUncheckedIndexRead } from "../../typecheck/utils.ts";
 
 export const noNullishCoalescing: TSRule = {
   kind: "ts",
@@ -7,13 +8,21 @@ export const noNullishCoalescing: TSRule = {
   severity: "warning",
   message: "Nullish coalescing (??) fallback on a non-nullable type is dead code; remove the fallback or fix the type upstream",
   syntaxKinds: [ts.SyntaxKind.BinaryExpression],
+  requiresStrictNullChecks: true,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;
     if (node.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken) return;
     if (isPossiblyMissingArrayBindingValue(node.left, ctx)) return;
+    // arr[i] / record[key] reads can be undefined at runtime even when the
+    // checker says otherwise (noUncheckedIndexedAccess off) — the fallback is real.
+    if (isUncheckedIndexRead(node.left, ctx.semantics, ctx.compilerOptions)) return;
     if (ctx.isNullable(node.left)) return;
-    ctx.report(node);
+    ctx.report(node, undefined, {
+      start: node.getStart(ctx.sourceFile),
+      end: node.getEnd(),
+      text: node.left.getText(ctx.sourceFile),
+    });
   },
 };
 

@@ -4,6 +4,7 @@ export interface ConstantEntry {
   name: string;
   file: string;
   line: number;
+  column: number;
   valueHash: string;
   valueText: string;
   exported: boolean;

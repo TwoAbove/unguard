@@ -3,6 +3,7 @@ import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 import type { Diagnostic, ProjectIndexNeed } from "../rules/types.ts";
 import type { ProgramGroupConfig } from "../typecheck/program.ts";
+import type { GroupAnalysisResult } from "./analyze.ts";
 import type { RulePolicySeverity } from "./types.ts";
 
 export interface RuleSpec {
@@ -23,7 +24,7 @@ export interface WorkerRequest {
 }
 
 export type WorkerResponse =
-  | { taskId: number; ok: true; diagnostics: Diagnostic[] }
+  | ({ taskId: number; ok: true } & GroupAnalysisResult)
   | { taskId: number; ok: false; error: string };
 
 const WORKER_URL = new URL("./worker.js", import.meta.url);
@@ -38,16 +39,16 @@ export async function runGroupsInWorkers(
   ruleSpecs: RuleSpec[],
   indexNeeds: ProjectIndexNeed[],
   concurrency: number,
-): Promise<Diagnostic[][]> {
+): Promise<GroupAnalysisResult[]> {
   if (tasks.length === 0) return [];
 
   // Heaviest groups first -> reduces tail latency when group count > worker count.
   const ordered = [...tasks].sort((a, b) => b.groupConfig.scanFiles.length - a.groupConfig.scanFiles.length);
   const workerCount = Math.min(concurrency, ordered.length);
   const workers: Worker[] = [];
-  const results = new Array<Diagnostic[]>(tasks.length);
+  const results = new Array<GroupAnalysisResult>(tasks.length);
 
-  for (let i = 0; i < tasks.length; i++) results[i] = [];
+  for (let i = 0; i < tasks.length; i++) results[i] = { diagnostics: [], globalFacts: {} };
 
   let nextIndex = 0;
   let remaining = ordered.length;
@@ -82,7 +83,7 @@ export async function runGroupsInWorkers(
 
       worker.on("message", (response: WorkerResponse) => {
         if (response.ok) {
-          results[response.taskId] = response.diagnostics;
+          results[response.taskId] = { diagnostics: response.diagnostics, globalFacts: response.globalFacts };
         } else if (firstError === null) {
           firstError = new Error(`unguard worker error: ${response.error}`);
         }

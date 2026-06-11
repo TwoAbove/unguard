@@ -1,6 +1,6 @@
 {
   "name": "unguard",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "description": "Detect overdefensive AI-generated code",
   "author": "Seva Maltsev <me@seva.dev> (https://seva.dev)",
   "license": "MIT",
@@ -17,7 +17,12 @@
     "linter",
     "static-analysis",
     "code-quality",
-    "type-safety"
+    "type-safety",
+    "ai",
+    "ai-generated-code",
+    "code-review",
+    "defensive-programming",
+    "eslint"
   ],
   "type": "module",
   "bin": {
@@ -43,6 +48,7 @@
     "test:watch": "vitest",
     "scan": "node ./bin/unguard.mjs scan",
     "scan:strict": "node ./bin/unguard.mjs scan --strict",
+    "demo": "vhs demo/demo.tape && ffmpeg -y -loglevel error -sseof -0.5 -i demo/demo.gif -frames:v 1 -update 1 /tmp/unguard-demo-frame.png",
     "prepublishOnly": "npm run build && npm run test"
   },
   "engines": {

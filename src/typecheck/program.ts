@@ -1,11 +1,6 @@
 import * as ts from "typescript";
 import { dirname } from "node:path";
 
-export interface ProgramGroup {
-  program: ts.Program;
-  scanFiles: string[];
-}
-
 export interface ProgramGroupConfig {
   configPath: string | undefined;
   scanFiles: string[];

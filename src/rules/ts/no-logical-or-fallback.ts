@@ -1,14 +1,15 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
-import { includesNumberType, isNullableType } from "../../typecheck/utils.ts";
+import { includesNumberType, isNullableType, isUncheckedIndexRead, libDeclaredSignature } from "../../typecheck/utils.ts";
 
 export const noLogicalOrFallback: TSRule = {
   kind: "ts",
   id: "no-logical-or-fallback",
   severity: "warning",
   message:
-    '|| fallback on a data-structure lookup swallows valid falsy values (0, ""); use ?? to only catch null/undefined',
+    '|| fallback on a nullable value swallows valid falsy values (0, ""); use ?? to only catch null/undefined',
   syntaxKinds: [ts.SyntaxKind.BinaryExpression],
+  requiresStrictNullChecks: true,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;
@@ -20,8 +21,9 @@ export const noLogicalOrFallback: TSRule = {
     const left = node.left;
     const lhsType = ctx.semantics.typeAtLocation(left);
 
-    // Number() / parseInt() — || catches NaN/0 intentionally, ?? would not help
-    if (isNumericCoercionCall(left)) return;
+    // Lib-declared free function returning number (Number, parseInt, ...):
+    // || catches NaN/0 intentionally, ?? would not help.
+    if (isLibNumericCoercionCall(left, ctx)) return;
 
     // String type without undefined: || catches "" intentionally — suppress
     // String | undefined: || swallows "" AND catches undefined — should use ??
@@ -29,16 +31,49 @@ export const noLogicalOrFallback: TSRule = {
 
     // LHS includes number and RHS is not 0 -> catches bugs like `seed || undefined`
     if (includesNumberType(lhsType) && !isZeroLiteral(right)) {
-      ctx.report(node, '|| on a numeric type swallows 0; use ?? to only catch null/undefined');
+      ctx.report(node, "|| on a numeric type swallows 0; use ?? to only catch null/undefined");
       return;
     }
 
-    // Data-structure lookups: .get(), .find(), x[key], optional chaining
-    if (isDataStructureLookup(left)) {
+    // Lookup-shaped reads, detected structurally: the absence encoded in the
+    // type (or hidden by noUncheckedIndexedAccess) is what the fallback is
+    // for, and || conflates absence with falsiness. Plain property reads of
+    // `string | undefined` (e.g. env vars, where "" conventionally means
+    // "unset") are deliberately not flagged.
+    if (isDataStructureLookup(left, lhsType, ctx)) {
       ctx.report(node);
     }
   },
 };
+
+function isDataStructureLookup(left: ts.Expression, lhsType: ts.Type, ctx: TSVisitContext): boolean {
+  // x[key] / arr[0] — nullable element, or unchecked when noUncheckedIndexedAccess is off
+  if (ts.isElementAccessExpression(left)) {
+    if (isNullableType(ctx.semantics.checker, lhsType)) return true;
+    return isUncheckedIndexRead(left, ctx.semantics, ctx.compilerOptions);
+  }
+
+  // a?.b chains contribute undefined structurally
+  if (hasOptionalChaining(left)) return true;
+
+  // A call whose declared return type models absence (Map.get, Array.find,
+  // any user lookup returning T | undefined or T | null)
+  if (ts.isCallExpression(left)) {
+    const signature = ctx.semantics.resolvedSignature(left);
+    if (signature === undefined) return false;
+    return isNullableType(ctx.semantics.checker, signature.getReturnType());
+  }
+
+  return false;
+}
+
+function hasOptionalChaining(node: ts.Node): boolean {
+  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isCallExpression(node)) {
+    if (node.questionDotToken) return true;
+    return hasOptionalChaining(node.expression);
+  }
+  return false;
+}
 
 /** LHS is string (or string-like) without null/undefined in the union. */
 function isStringNotNullable(type: ts.Type, checker: ts.TypeChecker): boolean {
@@ -55,47 +90,24 @@ function isLiteral(node: ts.Node): boolean {
   if (ts.isArrayLiteralExpression(node) || ts.isObjectLiteralExpression(node)) return true;
   if (ts.isIdentifier(node) && node.text === "undefined") return true;
   if (node.kind === ts.SyntaxKind.NullKeyword) return true;
-  if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) return true;
-  return false;
+  return node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword;
 }
 
-/** Number(...) or parseInt(...) — returns number, || catches NaN/0, ?? wouldn't help */
-function isNumericCoercionCall(node: ts.Node): boolean {
+/**
+ * Free function declared in a lib .d.ts returning number — the standard
+ * numeric coercions (Number, parseInt, parseFloat). || after these catches
+ * NaN and 0 deliberately; ?? wouldn't. Matched by declaration origin and
+ * return type, not by callee name.
+ */
+function isLibNumericCoercionCall(node: ts.Node, ctx: TSVisitContext): boolean {
   if (!ts.isCallExpression(node)) return false;
   if (!ts.isIdentifier(node.expression)) return false;
-  const name = node.expression.text;
-  return name === "Number" || name === "parseInt" || name === "parseFloat";
+  const signature = libDeclaredSignature(node, ctx.semantics);
+  if (signature === null) return false;
+  const returnType = signature.getReturnType();
+  return (returnType.flags & ts.TypeFlags.NumberLike) !== 0;
 }
 
 function isZeroLiteral(node: ts.Node): boolean {
   return ts.isNumericLiteral(node) && node.text === "0";
-}
-
-function isDataStructureLookup(left: ts.Node): boolean {
-  // Flag: LHS is .get(), .find(), .getStore() call
-  if (ts.isCallExpression(left)) {
-    const callee = left.expression;
-    if (ts.isPropertyAccessExpression(callee)) {
-      const methodName = callee.name.text;
-      if (methodName === "find" || methodName === "getStore" || methodName === "get") return true;
-    }
-  }
-
-  // Flag: LHS is computed member expression x[key]
-  if (ts.isElementAccessExpression(left)) return true;
-
-  // Flag: LHS contains optional chaining (?.)
-  if (hasOptionalChaining(left)) return true;
-
-  return false;
-}
-
-function hasOptionalChaining(node: ts.Node): boolean {
-  if (ts.isPropertyAccessExpression(node) && node.questionDotToken) return true;
-  if (ts.isElementAccessExpression(node) && node.questionDotToken) return true;
-  if (ts.isCallExpression(node) && node.questionDotToken) return true;
-  if (ts.isPropertyAccessExpression(node)) return hasOptionalChaining(node.expression);
-  if (ts.isCallExpression(node)) return hasOptionalChaining(node.expression);
-  if (ts.isElementAccessExpression(node)) return hasOptionalChaining(node.expression);
-  return false;
 }

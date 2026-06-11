@@ -76,3 +76,39 @@ function ok_catch_result_shape(): Promise<Result<void>> {
     err,
   }));
 }
+
+// OK: error is handed off to a call; the call receives the original error.
+function ok_passes_to_call(): void {
+  try {
+    riskyOperation();
+  } catch (err) {
+    logger.error("upsert failed", err);
+  }
+}
+
+// OK: error passed in object-literal argument
+function ok_passes_in_object_arg(): readonly string[] {
+  try {
+    return ["a", "b"];
+  } catch (err) {
+    logger.warn({ msg: "listItems failed", error: err });
+    return [];
+  }
+}
+
+// OK: error passed via template-literal in call argument
+function ok_passes_in_template(): void {
+  try {
+    riskyOperation();
+  } catch (err) {
+    logger.error(`failed: ${err}`);
+  }
+}
+
+// OK: .catch handler hands error to a call, then returns
+function ok_promise_catch_passes_to_call(): Promise<unknown> {
+  return backgroundJob().catch((err) => {
+    logger.warn("background", err);
+    return null;
+  });
+}

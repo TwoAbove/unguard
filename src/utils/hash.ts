@@ -42,10 +42,6 @@ export interface FunctionBodyAnalysis {
   normalizedBodyLength: number;
 }
 
-function stripComments(text: string): string {
-  return text.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
-}
-
 function normalizeBodyText(text: string, paramNames: string[]): string {
   let normalized = text;
   // Normalize string literals (double-quoted, single-quoted, template)
@@ -61,8 +57,8 @@ function normalizeBodyText(text: string, paramNames: string[]): string {
     normalized = normalized.replace(new RegExp(`\\b${escaped}\\b`, "g"), `$${i}`);
   }
   // Normalize member-access objects: this.x and $N.x both become $_.x
-  normalized = normalized.replace(/\bthis\./g, "$_.");
-  normalized = normalized.replace(/\$\d+\./g, "$_.");
+  normalized = normalized.replace(/\bthis\s*\.\s*/g, "$_.");
+  normalized = normalized.replace(/\$\d+\s*\.\s*/g, "$_.");
   // Normalize whitespace
   normalized = normalized.replace(/\s+/g, " ").trim();
   return normalized;
@@ -73,7 +69,7 @@ export function analyzeFunctionBody(
   sourceFile: ts.SourceFile,
   paramNames: string[],
 ): FunctionBodyAnalysis {
-  const stripped = stripComments(node.getText(sourceFile));
+  const stripped = stripCommentsAndWhitespace(node.getText(sourceFile));
   const normalized = normalizeBodyText(stripped, paramNames);
   return {
     hash: hashText(stripped),
@@ -84,14 +80,32 @@ export function analyzeFunctionBody(
 }
 
 /**
+ * Strip comments and normalize token spacing without touching literal contents.
+ * Used as the textual canonical form for hashing so strings like `"http://x"`
+ * remain intact while comment/trivia layout does not affect identity.
+ */
+export function stripCommentsAndWhitespace(text: string): string {
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    true,
+    ts.LanguageVariant.Standard,
+    text,
+  );
+  const tokens: string[] = [];
+  let token = scanner.scan();
+  while (token !== ts.SyntaxKind.EndOfFileToken) {
+    tokens.push(scanner.getTokenText());
+    token = scanner.scan();
+  }
+  return tokens.join(" ").trim();
+}
+
+/**
  * Normalize raw text (not from an AST node) using the same normalization pipeline.
  * Used for statement-sequence hashing.
  */
 export function normalizeText(text: string): string {
-  // Strip line comments
-  let t = text.replace(/\/\/[^\n]*/g, "");
-  // Strip block comments
-  t = t.replace(/\/\*[\s\S]*?\*\//g, "");
+  let t = stripCommentsAndWhitespace(text);
   // Normalize string literals
   t = t.replace(/"(?:[^"\\]|\\.)*"/g, '"__STR__"');
   t = t.replace(/'(?:[^'\\]|\\.)*'/g, '"__STR__"');
@@ -100,8 +114,6 @@ export function normalizeText(text: string): string {
   t = t.replace(/\b\d+(?:\.\d+)?\b/g, "__NUM__");
   // Normalize member-access objects
   t = t.replace(/\bthis\./g, "$_.");
-  // Normalize whitespace
-  t = t.replace(/\s+/g, " ").trim();
   return t;
 }
 

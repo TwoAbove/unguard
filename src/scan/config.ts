@@ -1,6 +1,8 @@
 import type {
   FailOn,
+  ResolvedRuleOverride,
   ResolvedScanConfig,
+  RuleOverride,
   RulePolicy,
   RulePolicyEntry,
   RulePolicySeverity,
@@ -29,16 +31,27 @@ export function resolveScanConfig(options: ScanOptions): ResolvedScanConfig {
   const ignore = [...BUILTIN_IGNORE, ...GENERATED_IGNORE, ...(options.ignore ?? [])];
   return {
     paths,
+    mode: options.mode ?? "scan",
     strict: options.strict ?? false,
     rules: options.rules ? [...options.rules] : null,
     ignore,
     rulePolicy: toRulePolicyEntries(options.rulePolicy),
+    overrides: toResolvedOverrides(options.overrides),
     showSeverities: normalizeSeveritySet(options.showSeverities),
     failOn: options.failOn ?? DEFAULT_FAIL_ON,
     useGitIgnore: options.useGitIgnore ?? true,
     concurrency: options.concurrency,
     cache: options.cache ?? true,
+    baseline: options.baseline ?? null,
   };
+}
+
+function toResolvedOverrides(overrides: RuleOverride[] | undefined): ResolvedRuleOverride[] {
+  if (overrides === undefined) return [];
+  return overrides.map((entry) => ({
+    files: [...entry.files],
+    rulePolicy: toRulePolicyEntries(entry.rules),
+  }));
 }
 
 export function toRulePolicyEntries(policy: RulePolicy | undefined): RulePolicyEntry[] {

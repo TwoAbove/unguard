@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scan } from "../src/engine.ts";
+import { executeScan, scan } from "../src/engine.ts";
 import { analyzeFiles } from "../src/scan/analyze.ts";
 import { allRules } from "../src/rules/index.ts";
 
@@ -193,6 +193,88 @@ describe("engine", () => {
     });
     expect(result.diagnostics).toHaveLength(1);
     expect(result.diagnostics[0]?.severity).toBe("error");
+  });
+});
+
+describe("rule tiers", () => {
+  it("scan mode skips heuristic rules", async () => {
+    const lib = new URL("./fixtures/cross-group-usage/lib/helpers.ts", import.meta.url).pathname;
+    const result = await scan({ paths: [lib], cache: false });
+    expect(result.diagnostics.filter((d) => d.ruleId === "unused-export")).toHaveLength(0);
+  });
+
+  it("audit mode skips proven rules", async () => {
+    const result = await scan({
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+      mode: "audit",
+      cache: false,
+    });
+    expect(result.diagnostics.filter((d) => d.ruleId === "no-swallowed-catch")).toHaveLength(0);
+  });
+
+  it("an explicit rule filter bypasses the mode split", async () => {
+    const result = await scan({
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+      mode: "audit",
+      rules: ["no-swallowed-catch"],
+      cache: false,
+    });
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+  });
+
+  it("supports confidence selectors in rule policy", async () => {
+    const result = await scan({
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+      rules: ["no-swallowed-catch"],
+      rulePolicy: { "confidence:proven": "off" },
+      cache: false,
+    });
+    expect(result.diagnostics).toHaveLength(0);
+  });
+});
+
+describe("path-scoped overrides", () => {
+  it("drops diagnostics in matching files when set to off", async () => {
+    const result = await executeScan({
+      paths: ["tests/rules/no-any-cast/invalid.ts"],
+      rules: ["no-any-cast"],
+      overrides: [{ files: ["tests/rules/**"], rules: { "no-any-cast": "off" } }],
+      cache: false,
+    });
+    expect(result.visibleDiagnostics).toHaveLength(0);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("reclassifies severity in matching files", async () => {
+    const result = await executeScan({
+      paths: ["tests/rules/no-any-cast/invalid.ts"],
+      rules: ["no-any-cast"],
+      overrides: [{ files: ["tests/rules/**"], rules: { "no-any-cast": "info" } }],
+      cache: false,
+    });
+    expect(result.visibleDiagnostics.length).toBeGreaterThan(0);
+    expect(result.visibleDiagnostics.every((d) => d.severity === "info")).toBe(true);
+  });
+
+  it("leaves non-matching files untouched", async () => {
+    const result = await executeScan({
+      paths: ["tests/rules/no-any-cast/invalid.ts"],
+      rules: ["no-any-cast"],
+      overrides: [{ files: ["src/**"], rules: { "no-any-cast": "off" } }],
+      cache: false,
+    });
+    expect(result.visibleDiagnostics.length).toBeGreaterThan(0);
+  });
+});
+
+describe("cross-group usage merge", () => {
+  it("sees usage from a sibling tsconfig group", async () => {
+    const lib = new URL("./fixtures/cross-group-usage/lib/helpers.ts", import.meta.url).pathname;
+    const app = new URL("./fixtures/cross-group-usage/app/index.ts", import.meta.url).pathname;
+    const result = await scan({ paths: [lib, app], rules: ["unused-export"], cache: false });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.file).toBe(lib);
+    expect(result.diagnostics[0]?.message).toContain("trulyUnused");
   });
 });
 

@@ -5,15 +5,16 @@ import { BaseRegistry } from "./base-registry.ts";
 export interface InlineParamTypeEntry {
   file: string;
   line: number;
+  column: number;
   hash: string;
   typeText: string;
   node: ts.Node;
 }
 
 export class InlineParamTypeRegistry extends BaseRegistry<InlineParamTypeEntry> {
-  add(file: string, line: number, typeNode: ts.TypeLiteralNode, sourceFile: ts.SourceFile): void {
+  add(file: string, line: number, column: number, typeNode: ts.TypeLiteralNode, sourceFile: ts.SourceFile): void {
     const hash = hashTypeShape(typeNode, sourceFile);
     const typeText = typeNode.getText(sourceFile).replace(/\s+/g, " ").trim();
-    this.addEntry({ file, line, hash, typeText, node: typeNode }, hash);
+    this.addEntry({ file, line, column, hash, typeText, node: typeNode }, hash);
   }
 }

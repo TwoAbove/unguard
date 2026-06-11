@@ -8,13 +8,7 @@ const y = arr[0] ?? "default";
 declare const definiteStr: string;
 const z = definiteStr!;
 
-// Guarded: filter then index — result is nullable but pattern is safe
-function afterFilter(items: (string | null)[]) {
-  const filtered = items.filter((x) => x !== null);
-  return filtered[0]!;
-}
-
-// split()[n]! — always safe
+// split()[0]! — split always yields at least one element
 function firstPart(s: string) {
   return s.split("/")[0]!;
 }

@@ -13,11 +13,14 @@ export interface FunctionEntry {
   name: string;
   file: string;
   line: number;
+  column: number;
   hash: string;
   normalizedHash: string;
   params: ParamInfo[];
   node: ts.Node;
   exported: boolean;
+  /** True when the declaration carries the `default` modifier (export default) */
+  exportedAsDefault?: boolean;
   symbol?: ts.Symbol;
   /** Whitespace-normalized body text length (for trivial-body filtering) */
   bodyLength: number;

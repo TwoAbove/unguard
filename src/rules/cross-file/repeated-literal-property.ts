@@ -76,7 +76,7 @@ export const repeatedLiteralProperty: CrossFileRule = {
 };
 
 function findEnclosingFunctionStart(node: ts.Node, sourceFile: ts.SourceFile): number {
-  let current = node.parent;
+  let current: ts.Node | undefined = node.parent;
   while (current) {
     if (
       ts.isFunctionDeclaration(current) ||

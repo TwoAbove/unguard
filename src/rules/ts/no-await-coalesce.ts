@@ -8,6 +8,7 @@ export const noAwaitCoalesce: TSRule = {
   message:
     "?? on a value whose nullability comes from a call's return type collapses failure modes; check the result and branch instead of defaulting",
   syntaxKinds: [ts.SyntaxKind.BinaryExpression],
+  requiresStrictNullChecks: true,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isBinaryExpression(node)) return;

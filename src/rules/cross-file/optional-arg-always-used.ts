@@ -1,4 +1,5 @@
 import type { CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
+import { optionalParams, signatureChangeCallSites } from "./call-site-utils.ts";
 
 export const optionalArgAlwaysUsed: CrossFileRule = {
   id: "optional-arg-always-used",
@@ -10,32 +11,20 @@ export const optionalArgAlwaysUsed: CrossFileRule = {
     const diagnostics: Diagnostic[] = [];
 
     for (const fn of project.functions.getAll()) {
-      // Find optional params (by index)
-      for (let i = 0; i < fn.params.length; i++) {
-        const param = fn.params[i];
-        if (param === undefined) continue;
-        if (!param.optional && !param.hasDefault) continue;
+      const callSites = signatureChangeCallSites(fn, project, 2);
+      if (callSites === null) continue;
 
-        // Find call sites for this function — use symbol matching when available
-        const callSites = fn.symbol
-          ? project.callSites.filter((c) => c.symbol === fn.symbol)
-          : project.callSites.filter((c) => c.calleeName === fn.name);
-
-        // Need at least 2 call sites to be meaningful
-        if (callSites.length < 2) continue;
-
+      for (const { index, param } of optionalParams(fn)) {
         // Check if every call site provides this positional argument
-        const allProvide = callSites.every((c) => c.argCount > i);
-        if (allProvide) {
-          diagnostics.push({
-            ruleId: this.id,
-            severity: this.severity,
-            message: `Optional parameter "${param.name}" is always provided at all ${callSites.length} call sites; make it required`,
-            file: fn.file,
-            line: fn.line,
-            column: 1,
-          });
-        }
+        if (!callSites.every((c) => c.argCount > index)) continue;
+        diagnostics.push({
+          ruleId: this.id,
+          severity: this.severity,
+          message: `Optional parameter "${param.name}" is always provided at all ${callSites.length} call sites; make it required`,
+          file: fn.file,
+          line: fn.line,
+          column: 1,
+        });
       }
     }
 

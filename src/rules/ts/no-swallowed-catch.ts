@@ -1,5 +1,6 @@
 import * as ts from "typescript";
-import type { SemanticServices, TSRule, TSVisitContext } from "../types.ts";
+import type { TSRule, TSVisitContext } from "../types.ts";
+import { isPromiseLike } from "../../typecheck/utils.ts";
 
 export const noSwallowedCatch: TSRule = {
   kind: "ts",
@@ -44,12 +45,36 @@ function identifierBindingName(
   return decl.name.text;
 }
 
-/** Treats catch/handler body as handled iff it throws somewhere, OR a return references the binding. */
+/**
+ * Treats catch/handler body as handled iff one of:
+ *  - body throws (rethrow / wrap-and-throw)
+ *  - a return references the binding (carried into the return shape)
+ *  - the binding is passed as an argument to some call (handed off to a sink)
+ */
 function handlesError(body: ts.Node, binding: string | undefined): boolean {
   if (!ts.isBlock(body)) {
     return binding !== undefined && expressionReferencesBinding(body, binding);
   }
-  return blockThrows(body) || (binding !== undefined && blockReturnsReferencingBinding(body, binding));
+  if (blockThrows(body)) return true;
+  if (binding === undefined) return false;
+  if (blockReturnsReferencingBinding(body, binding)) return true;
+  return blockPassesBindingToCall(body, binding);
+}
+
+/**
+ * True when some CallExpression in the body has an argument tree that references
+ * the catch binding. The structural claim: a call that takes the error as an
+ * argument is contracted to do something with it (log, capture, report, wrap,
+ * transform). We trust the call's contract — same trust we extend to returns.
+ *
+ * Walks the body excluding nested function scopes (those would have their own
+ * catch/return semantics for the binding).
+ */
+function blockPassesBindingToCall(body: ts.Block, binding: string): boolean {
+  return walkSkippingFunctions(body, (n) => {
+    if (!ts.isCallExpression(n)) return false;
+    return n.arguments.some((arg) => expressionReferencesBinding(arg, binding));
+  });
 }
 
 function blockThrows(body: ts.Block): boolean {
@@ -80,10 +105,31 @@ function walkSkippingFunctions(root: ts.Node, predicate: (n: ts.Node) => boolean
       found = true;
       return;
     }
+    if (ts.isBlock(node) || ts.isSourceFile(node)) {
+      for (const stmt of node.statements) {
+        walk(stmt);
+        if (found || statementTerminates(stmt)) return;
+      }
+      return;
+    }
     ts.forEachChild(node, walk);
   }
-  ts.forEachChild(root, walk);
+  walk(root);
   return found;
+}
+
+function statementTerminates(stmt: ts.Statement): boolean {
+  if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) return true;
+  if (!ts.isIfStatement(stmt)) return false;
+  if (stmt.elseStatement === undefined) return false;
+  return branchTerminates(stmt.thenStatement) && branchTerminates(stmt.elseStatement);
+}
+
+function branchTerminates(stmt: ts.Statement): boolean {
+  if (statementTerminates(stmt)) return true;
+  if (!ts.isBlock(stmt)) return false;
+  const last = stmt.statements.at(-1);
+  return last !== undefined && statementTerminates(last);
 }
 
 function expressionReferencesBinding(expr: ts.Node, binding: string): boolean {
@@ -109,7 +155,7 @@ function expressionReferencesBinding(expr: ts.Node, binding: string): boolean {
 }
 
 function isReferenceUse(id: ts.Identifier): boolean {
-  const parent = id.parent;
+  const parent: ts.Node | undefined = id.parent;
   if (!parent) return true;
   if (ts.isPropertyAccessExpression(parent) && parent.name === id) return false;
   if (ts.isPropertyAssignment(parent) && parent.name === id) return false;
@@ -117,23 +163,5 @@ function isReferenceUse(id: ts.Identifier): boolean {
   if (ts.isQualifiedName(parent) && parent.right === id) return false;
   if (ts.isBindingElement(parent) && parent.propertyName === id) return false;
   if (ts.isParameter(parent) && parent.name === id) return false;
-  if (ts.isVariableDeclaration(parent) && parent.name === id) return false;
-  return true;
-}
-
-function isPromiseLike(type: ts.Type, semantics: SemanticServices): boolean {
-  if (hasThenMethod(type, semantics)) return true;
-  if (type.isUnion()) return type.types.some((t) => isPromiseLike(t, semantics));
-  if (type.isIntersection()) return type.types.some((t) => isPromiseLike(t, semantics));
-  return false;
-}
-
-function hasThenMethod(type: ts.Type, semantics: SemanticServices): boolean {
-  const apparent = semantics.apparentType(type);
-  const then = apparent.getProperty("then");
-  if (!then) return false;
-  const declaration = then.valueDeclaration ?? then.declarations?.[0];
-  if (!declaration) return false;
-  const thenType = semantics.typeOfSymbolAtLocation(then, declaration);
-  return thenType.getCallSignatures().length > 0;
+  return !(ts.isVariableDeclaration(parent) && parent.name === id);
 }

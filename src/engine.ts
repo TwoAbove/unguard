@@ -18,7 +18,7 @@ export type {
   Severity,
 } from "./scan/types.ts";
 
-const UNGUARD_VERSION = "0.15.1";
+const UNGUARD_VERSION = "0.16.0";
 
 export async function executeScan(options: ScanOptions): Promise<ScanExecutionResult> {
   const config = resolveScanConfig(options);

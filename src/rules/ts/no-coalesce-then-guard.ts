@@ -52,12 +52,12 @@ interface DeclarationContext {
 function getDeclarationContext(coalesce: ts.BinaryExpression): DeclarationContext | undefined {
   let cur: ts.Node = coalesce;
   while (cur.parent && ts.isParenthesizedExpression(cur.parent)) cur = cur.parent;
-  const decl = cur.parent;
+  const decl: ts.Node | undefined = cur.parent;
   if (!decl || !ts.isVariableDeclaration(decl)) return undefined;
   if (!ts.isIdentifier(decl.name)) return undefined;
-  const list = decl.parent;
+  const list: ts.Node | undefined = decl.parent;
   if (!list || !ts.isVariableDeclarationList(list)) return undefined;
-  const stmt = list.parent;
+  const stmt: ts.Node | undefined = list.parent;
   if (!stmt || !ts.isVariableStatement(stmt)) return undefined;
   return { binding: decl.name.text, statement: stmt };
 }
@@ -74,6 +74,19 @@ function classifyFallback(node: ts.Expression): Fallback | undefined {
 function matchesGuard(expr: ts.Expression, binding: string, fallback: Fallback): boolean {
   let cond = expr;
   while (ts.isParenthesizedExpression(cond)) cond = cond.expression;
+
+  // `if (!x)` after `x = a ?? null/undefined`: !(a ?? null) ≡ !a, so the
+  // guard partitions identically to testing the original value — the ??
+  // contributes nothing.
+  if (
+    (fallback.kind === "null" || fallback.kind === "undefined") &&
+    ts.isPrefixUnaryExpression(cond) &&
+    cond.operator === ts.SyntaxKind.ExclamationToken &&
+    isIdentifierNamed(cond.operand, binding)
+  ) {
+    return true;
+  }
+
   if (!ts.isBinaryExpression(cond)) return false;
 
   if (fallback.kind === "null") {
@@ -102,8 +115,7 @@ function matchesSidedLiteral(
   isLit: (n: ts.Node) => boolean,
 ): boolean {
   if (isIdentifierNamed(bin.left, binding) && isLit(bin.right)) return true;
-  if (isIdentifierNamed(bin.right, binding) && isLit(bin.left)) return true;
-  return false;
+  return isIdentifierNamed(bin.right, binding) && isLit(bin.left);
 }
 
 function isIdentifierNamed(node: ts.Node, name: string): boolean {

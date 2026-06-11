@@ -3,10 +3,10 @@ import { assertValid, assertInvalid } from "../../harness.ts";
 import { noTsIgnore } from "../../../src/rules/ts/no-ts-ignore.ts";
 
 describe("no-ts-ignore", () => {
-  it("allows normal comments", () => {
+  it("allows normal comments and @ts-expect-error", () => {
     assertValid(noTsIgnore, new URL("./valid.ts", import.meta.url).pathname);
   });
-  it("flags @ts-ignore and @ts-expect-error", () => {
+  it("flags @ts-ignore", () => {
     assertInvalid(noTsIgnore, new URL("./invalid.ts", import.meta.url).pathname);
   });
 });

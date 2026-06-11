@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { reportDeadQuestionDot } from "./optional-chain.ts";
 
 export const noOptionalPropertyAccess: TSRule = {
   kind: "ts",
@@ -7,11 +8,10 @@ export const noOptionalPropertyAccess: TSRule = {
   severity: "warning",
   message: "Optional chaining (?.) on a non-nullable type is redundant; use direct access or fix the type upstream",
   syntaxKinds: [ts.SyntaxKind.PropertyAccessExpression],
+  requiresStrictNullChecks: true,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isPropertyAccessExpression(node)) return;
-    if (!node.questionDotToken) return;
-    if (ctx.isNullable(node.expression)) return;
-    ctx.report(node);
+    reportDeadQuestionDot(node, ".", ctx);
   },
 };

@@ -35,8 +35,7 @@ function isParamRequired(sig: ts.Signature, paramIndex: number): boolean {
   if (!decl || !ts.isParameter(decl)) return false;
   if (decl.questionToken !== undefined) return false;
   if (decl.initializer !== undefined) return false;
-  if (decl.dotDotDotToken !== undefined) return false;
-  return true;
+  return !(decl.dotDotDotToken !== undefined);
 }
 
 function resolveImplementedSignatures(

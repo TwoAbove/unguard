@@ -12,19 +12,15 @@ export const explicitNullArg: CrossFileRule = {
     const diagnostics: Diagnostic[] = [];
 
     // Build lookup structures for known project functions
-    const projectFnNames = new Set<string>();
     const projectFnSymbols = new Set<ts.Symbol>();
     for (const fn of project.functions.getAll()) {
-      projectFnNames.add(fn.name);
       if (fn.symbol) projectFnSymbols.add(fn.symbol);
     }
 
     for (const site of project.callSites) {
-      // Only flag calls to functions defined in the project — prefer symbol matching
-      const isProjectFn = site.symbol
-        ? projectFnSymbols.has(site.symbol)
-        : projectFnNames.has(site.calleeName);
-      if (!isProjectFn) continue;
+      // Only flag calls that resolve, by symbol, to a project function.
+      // A name fallback would misfire on unrelated same-named callees.
+      if (site.symbol === undefined || !projectFnSymbols.has(site.symbol)) continue;
 
       for (let i = 0; i < site.node.arguments.length; i++) {
         const arg = site.node.arguments[i];

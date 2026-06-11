@@ -17,8 +17,13 @@ port.on("message", (req: WorkerRequest) => {
     const tsRules = rules.filter(isTSRule);
     const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
     const indexNeeds: ReadonlySet<ProjectIndexNeed> = new Set(req.indexNeeds);
-    const diagnostics = analyzeGroup(req.groupConfig, tsRules, crossFileRules, indexNeeds);
-    const response: WorkerResponse = { taskId: req.taskId, ok: true, diagnostics };
+    const result = analyzeGroup(req.groupConfig, tsRules, crossFileRules, indexNeeds);
+    const response: WorkerResponse = {
+      taskId: req.taskId,
+      ok: true,
+      diagnostics: result.diagnostics,
+      globalFacts: result.globalFacts,
+    };
     port.postMessage(response);
   } catch (err) {
     // @unguard no-swallowed-catch worker boundary: forwarded as a structured response to the parent thread.

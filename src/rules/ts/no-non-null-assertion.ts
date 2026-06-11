@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { libDeclaredSignature } from "../../typecheck/utils.ts";
 
 export const noNonNullAssertion: TSRule = {
   kind: "ts",
@@ -7,6 +8,7 @@ export const noNonNullAssertion: TSRule = {
   severity: "warning",
   message: "Non-null assertion (!) overrides the type checker; narrow with a type guard or fix the type so it's not nullable",
   syntaxKinds: [ts.SyntaxKind.NonNullExpression],
+  requiresStrictNullChecks: true,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isNonNullExpression(node)) return;
@@ -19,11 +21,8 @@ export const noNonNullAssertion: TSRule = {
     // External library type gap -> suppress
     if (ctx.isExternal(inner)) return;
 
-    // split(...)[n]! — always safe
-    if (isSplitElementAccess(inner)) return;
-
-    // filter(...)[n]! — safe pattern (narrowed array)
-    if (isFilterElementAccess(inner)) return;
+    // First element of a string split — the one index a split guarantees
+    if (isGuaranteedFirstSplitElement(inner, ctx)) return;
 
     // arr[n]! after a length guard — provably safe
     if (isLengthGuardedAccess(inner)) return;
@@ -32,33 +31,36 @@ export const noNonNullAssertion: TSRule = {
   },
 };
 
-function isSplitElementAccess(node: ts.Node): boolean {
+/**
+ * `str.split(sep)[0]!` — String.prototype.split always yields at least one
+ * element, so index 0 is present. Matched structurally, not by method name:
+ * a lib-declared method on a string receiver returning string[], indexed
+ * with the literal 0. Indexes past 0 carry no such guarantee and are flagged.
+ */
+function isGuaranteedFirstSplitElement(node: ts.Node, ctx: TSVisitContext): boolean {
   if (!ts.isElementAccessExpression(node)) return false;
-  const obj = node.expression;
-  if (!ts.isCallExpression(obj)) return false;
-  const callee = obj.expression;
-  if (!ts.isPropertyAccessExpression(callee)) return false;
-  return callee.name.text === "split";
+  const indexArg = node.argumentExpression;
+  if (!ts.isNumericLiteral(indexArg) || indexArg.text !== "0") return false;
+
+  const call = node.expression;
+  if (!ts.isCallExpression(call)) return false;
+  if (!ts.isPropertyAccessExpression(call.expression)) return false;
+
+  const signature = libDeclaredSignature(call, ctx.semantics);
+  if (signature === null) return false;
+
+  const receiverType = ctx.semantics.typeAtLocation(call.expression.expression);
+  if (!isStringLike(receiverType)) return false;
+
+  const returnType = signature.getReturnType();
+  if (!ctx.semantics.isArrayType(returnType)) return false;
+  const elementType = ctx.checker.getTypeArguments(returnType as ts.TypeReference)[0];
+  return elementType !== undefined && isStringLike(elementType);
 }
 
-function isFilterElementAccess(node: ts.Node): boolean {
-  // Direct: items.filter(...)[n]!
-  if (ts.isElementAccessExpression(node)) {
-    const obj = node.expression;
-    if (ts.isCallExpression(obj)) {
-      const callee = obj.expression;
-      if (ts.isPropertyAccessExpression(callee) && callee.name.text === "filter") return true;
-    }
-    // Indirect: const filtered = items.filter(...); filtered[n]!
-    if (ts.isIdentifier(obj)) {
-      const init = findVariableInit(obj);
-      if (init && ts.isCallExpression(init)) {
-        const callee = init.expression;
-        if (ts.isPropertyAccessExpression(callee) && callee.name.text === "filter") return true;
-      }
-    }
-  }
-  return false;
+function isStringLike(type: ts.Type): boolean {
+  if (type.isUnion()) return type.types.every(isStringLike);
+  return (type.flags & ts.TypeFlags.StringLike) !== 0;
 }
 
 /** Detect arr[n]! where arr.length is checked in a preceding guard or enclosing for-loop. */
@@ -163,18 +165,18 @@ function isZeroLengthCheck(expr: ts.Expression, arrName: string): boolean {
 
   // arr.length === 0
   if ((op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.EqualsEqualsToken)) {
-    if (isLengthAccess(expr.left, arrName) && isNumericLiteralValue(expr.right, 0)) return true;
-    if (isLengthAccess(expr.right, arrName) && isNumericLiteralValue(expr.left, 0)) return true;
+    if (isLengthAccess(expr.left, arrName) && isZeroLiteral(expr.right)) return true;
+    if (isLengthAccess(expr.right, arrName) && isZeroLiteral(expr.left)) return true;
   }
 
   // arr.length < 1  (or any N >= 1)
   if (op === ts.SyntaxKind.LessThanToken) {
-    if (isLengthAccess(expr.left, arrName) && isNumericLiteralGte(expr.right, 1)) return true;
+    if (isLengthAccess(expr.left, arrName) && isPositiveIntLiteral(expr.right)) return true;
   }
 
   // arr.length !== N where N >= 1 (e.g., if (arr.length !== 1) return; arr[0]!)
   if ((op === ts.SyntaxKind.ExclamationEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsToken)) {
-    if (isLengthAccess(expr.left, arrName) && isNumericLiteralGte(expr.right, 1)) return true;
+    if (isLengthAccess(expr.left, arrName) && isPositiveIntLiteral(expr.right)) return true;
   }
 
   return false;
@@ -187,17 +189,17 @@ function isPositiveLengthCheck(expr: ts.Expression, arrName: string): boolean {
 
   // arr.length > 0
   if (op === ts.SyntaxKind.GreaterThanToken) {
-    if (isLengthAccess(expr.left, arrName) && isNumericLiteralValue(expr.right, 0)) return true;
+    if (isLengthAccess(expr.left, arrName) && isZeroLiteral(expr.right)) return true;
   }
 
   // arr.length >= 1
   if (op === ts.SyntaxKind.GreaterThanEqualsToken) {
-    if (isLengthAccess(expr.left, arrName) && isNumericLiteralGte(expr.right, 1)) return true;
+    if (isLengthAccess(expr.left, arrName) && isPositiveIntLiteral(expr.right)) return true;
   }
 
   // arr.length !== 0
   if ((op === ts.SyntaxKind.ExclamationEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsToken)) {
-    if (isLengthAccess(expr.left, arrName) && isNumericLiteralValue(expr.right, 0)) return true;
+    if (isLengthAccess(expr.left, arrName) && isZeroLiteral(expr.right)) return true;
   }
 
   return false;
@@ -213,28 +215,15 @@ function isEarlyExit(stmt: ts.Statement): boolean {
   return false;
 }
 
-function isNumericLiteralValue(node: ts.Node, value: number): boolean {
-  return ts.isNumericLiteral(node) && node.text === String(value);
+function isZeroLiteral(node: ts.Node): boolean {
+  return ts.isNumericLiteral(node) && node.text === "0";
 }
 
-function isNumericLiteralGte(node: ts.Node, min: number): boolean {
-  return ts.isNumericLiteral(node) && Number(node.text) >= min;
+function isPositiveIntLiteral(node: ts.Node): boolean {
+  return ts.isNumericLiteral(node) && Number(node.text) >= 1;
 }
 
 function getIdentifierName(node: ts.Node): string | null {
   if (ts.isIdentifier(node)) return node.text;
   return null;
-}
-
-function findVariableInit(id: ts.Identifier): ts.Expression | undefined {
-  const sourceFile = id.getSourceFile();
-  let result: ts.Expression | undefined;
-  function visit(node: ts.Node): void {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === id.text && node.initializer) {
-      result = node.initializer;
-    }
-    if (!result) ts.forEachChild(node, visit);
-  }
-  visit(sourceFile);
-  return result;
 }

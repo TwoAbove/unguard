@@ -1,9 +1,16 @@
 import type { ConstantEntry } from "../../collect/constant-registry.ts";
 import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
 
+/**
+ * Iffy by this project's own standard: `hasNameOverlap` gates on identifier
+ * name segments, so renaming a constant changes the diagnostics — a sanctioned
+ * violation of the "structure and types, never names" hard rule. Without the
+ * gate, every unrelated pair of `100`s across the project would group. Kept at
+ * `info` severity to reflect that reduced confidence.
+ */
 export const duplicateConstantDeclaration: CrossFileRule = {
   id: "duplicate-constant-declaration",
-  severity: "warning",
+  severity: "info",
   message: "Identical constant value declared in multiple files; consolidate to a single definition",
   requires: ["constants"],
 

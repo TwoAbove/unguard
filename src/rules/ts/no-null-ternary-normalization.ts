@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { isUncheckedIndexRead } from "../../typecheck/utils.ts";
 
 export const noNullTernaryNormalization: TSRule = {
   kind: "ts",
@@ -7,6 +8,7 @@ export const noNullTernaryNormalization: TSRule = {
   severity: "warning",
   message: "Ternary null-normalization (x == null ? fallback : x); if the type guarantees non-null, remove the ternary; if not, fix the type upstream",
   syntaxKinds: [ts.SyntaxKind.ConditionalExpression],
+  requiresStrictNullChecks: true,
 
   visit(node: ts.Node, ctx: TSVisitContext) {
     if (!ts.isConditionalExpression(node)) return;
@@ -27,6 +29,8 @@ export const noNullTernaryNormalization: TSRule = {
     if (isNullish(node.whenTrue) || isNullish(node.whenFalse)) {
       // Non-nullable tested value -> this is dead code
       const tested = isNullish(test.left) ? test.right : test.left;
+      // Index reads hide runtime undefined when noUncheckedIndexedAccess is off
+      if (isUncheckedIndexRead(tested, ctx.semantics, ctx.compilerOptions)) return;
       if (!ctx.isNullable(tested)) {
         ctx.report(node, "Ternary null-normalization on a non-nullable type is dead code; remove the ternary");
         return;
@@ -40,6 +44,5 @@ function isNullish(node: ts.Node): boolean {
   if (node.kind === ts.SyntaxKind.NullKeyword) return true;
   if (ts.isIdentifier(node) && node.text === "undefined") return true;
   // void 0
-  if (ts.isVoidExpression(node)) return true;
-  return false;
+  return ts.isVoidExpression(node);
 }

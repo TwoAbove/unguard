@@ -8,15 +8,16 @@ export interface TypeEntry {
   name: string;
   file: string;
   line: number;
+  column: number;
   hash: string;
   node: ts.Node;
   exported: boolean;
 }
 
 export class TypeRegistry extends BaseRegistry<TypeEntry> {
-  add(name: string, file: string, line: number, typeNode: ts.Node, sourceFile: ts.SourceFile, exported: boolean): void {
+  add(name: string, file: string, line: number, column: number, typeNode: ts.Node, sourceFile: ts.SourceFile, exported: boolean): void {
     const hash = hashTypeShape(typeNode, sourceFile);
-    const entry: TypeEntry = { name, file, line, hash, node: typeNode, exported };
+    const entry: TypeEntry = { name, file, line, column, hash, node: typeNode, exported };
     this.addEntry(entry, hash);
   }
 
