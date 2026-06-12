@@ -44,10 +44,16 @@ export async function main(argv: string[]): Promise<number> {
       concurrency: { type: "string" },
       "no-baseline": { type: "boolean", default: false },
       "no-cache": { type: "boolean", default: false },
+      version: { type: "boolean", short: "v", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
     allowPositionals: true,
   });
+
+  if (values.version) {
+    console.log(readVersion());
+    return 0;
+  }
 
   if (values.help) {
     printHelp();
@@ -259,6 +265,12 @@ function printErrorAndFail(err: unknown): number {
   return 1;
 }
 
+function readVersion(): string {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const version: unknown = pkg.version;
+  return typeof version === "string" ? version : "unknown";
+}
+
 function printHelp() {
   console.log(`unguard: data-shape static analyzer
 
@@ -290,6 +302,7 @@ Options:
   --concurrency <n>     Worker threads for tsconfig groups (default: auto, 1 disables)
   --no-baseline         Ignore unguard.baseline.json for this scan
   --no-cache            Disable on-disk diagnostic cache (node_modules/.cache/unguard)
+  -v, --version         Print version and exit
   -h, --help            Show this help
 
 Exit codes:
