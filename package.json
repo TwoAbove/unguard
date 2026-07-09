@@ -1,6 +1,6 @@
 {
   "name": "unguard",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "description": "Detect overdefensive AI-generated code",
   "author": "Seva Maltsev <me@seva.dev> (https://seva.dev)",
   "license": "MIT",
@@ -40,8 +40,8 @@
     "schema.json"
   ],
   "scripts": {
-    "build": "tsup",
-    "typecheck": "tsc",
+    "build": "tsdown",
+    "typecheck": "node ./node_modules/tsc7/bin/tsc",
     "lint:biome": "biome lint src tests/**/*.test.ts tests/harness.ts",
     "lint": "npm run lint:biome",
     "test": "vitest run",
@@ -52,18 +52,19 @@
     "prepublishOnly": "npm run build && npm run test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
     "picocolors": "^1.1.1",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@types/node": "^25.3.0",
-    "tsup": "^8.5.1",
+    "@types/node": "^22.20.1",
+    "tsc7": "npm:typescript@^7.0.2",
+    "tsdown": "^0.22.4",
     "vitest": "^4.0.18"
   }
 }

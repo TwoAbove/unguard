@@ -1,4 +1,5 @@
 import { availableParallelism } from "node:os";
+import { createRequire } from "node:module";
 import { allRules } from "./rules/index.ts";
 import { analyzeFiles } from "./scan/analyze.ts";
 import { cacheCovers, computeScanKey, hashFiles, readScanCache, resolveCacheDir, writeScanCache } from "./scan/cache.ts";
@@ -18,7 +19,7 @@ export type {
   Severity,
 } from "./scan/types.ts";
 
-const UNGUARD_VERSION = "0.16.0";
+const UNGUARD_VERSION: string = createRequire(import.meta.url)("../package.json").version;
 
 export async function executeScan(options: ScanOptions): Promise<ScanExecutionResult> {
   const config = resolveScanConfig(options);
