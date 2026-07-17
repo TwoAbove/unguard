@@ -35,7 +35,7 @@ describe("engine", () => {
 
   it("skips declaration files in source-only analysis", async () => {
     const file = new URL("./fixtures/declaration-file.d.ts", import.meta.url).pathname;
-    const rules = allRules.filter((rule) => rule.id === "no-inline-param-type");
+    const rules = allRules.filter((rule) => rule.id === "no-explicit-any-annotation");
     expect(await analyzeFiles([file], rules, {})).toHaveLength(0);
   });
 

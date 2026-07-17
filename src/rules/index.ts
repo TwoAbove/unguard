@@ -28,7 +28,6 @@ import { noDoubleNegationCoercion } from "./ts/no-double-negation-coercion.ts";
 import { noDynamicImport } from "./ts/no-dynamic-import.ts";
 import { noErrorRewrap } from "./ts/no-error-rewrap.ts";
 import { noExplicitAnyAnnotation } from "./ts/no-explicit-any-annotation.ts";
-import { noInlineParamType } from "./ts/no-inline-param-type.ts";
 import { noInlineTypeAssertion } from "./ts/no-inline-type-assertion.ts";
 import { noNeverCast } from "./ts/no-never-cast.ts";
 import { noRedundantCast } from "./ts/no-redundant-cast.ts";
@@ -117,7 +116,6 @@ export const allRules: Rule[] = [
   noRedundantExistenceGuard,
   optionalParamCoercedInBody,
   noDefaultedRequiredPortArg,
-  noInlineParamType,
   duplicateTypeDeclaration,
   duplicateFunctionDeclaration,
   optionalArgAlwaysUsed,
@@ -183,8 +181,6 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "optional-param-coerced-in-body": { category: "interface-design", tags: ["api"], confidence: "proven" },
   // Type-proven divergence between the interface contract and the implementation.
   "no-defaulted-required-port-arg": { category: "interface-design", tags: ["api", "type-aware"], confidence: "proven" },
-  // Inline param shapes are idiomatic in some ecosystems (React props).
-  "no-inline-param-type": { category: "interface-design", tags: ["api"], confidence: "heuristic" },
   "duplicate-type-declaration": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
   "duplicate-type-name": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
   "duplicate-function-declaration": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },

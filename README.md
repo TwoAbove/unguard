@@ -305,7 +305,6 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 
 | Rule | Severity | Tier | What it catches |
 | ---- | -------- | ---- | --------------- |
-| `no-inline-param-type` | warning | audit | `(params: { id: string; ... })` -- an object type spelled out in the signature; name it so call sites and other signatures can share it |
 | `prefer-type-predicate` | warning | audit | `(x: unknown): boolean` whose body is `typeof`/`instanceof`/`in` checks -- returning `x is T` would let callers narrow |
 | `optional-param-coerced-in-body` | warning | scan | Optional param forced non-optional in the body (`x = x ?? def`, `x ??= def`, or `if (!x) throw`) |
 | `no-defaulted-required-port-arg` | warning | scan | `class C implements I { method(arg = x) }` where `I.method(arg)` is required -- the implementation quietly makes a required argument optional |

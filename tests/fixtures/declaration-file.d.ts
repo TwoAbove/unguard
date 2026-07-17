@@ -1,1 +1,1 @@
-export declare function acceptsInlineObject(value: { name: string }): void;
+export declare function acceptsAny(value: any): void;
