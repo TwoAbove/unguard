@@ -257,6 +257,16 @@ describe("NearDuplicates", () => {
     // But exact duplicates should NOT appear in near-duplicate groups
     expect(index.functions.getDuplicateGroups()).toHaveLength(0);
   });
+
+  it("groups bodies differing only in null vs undefined", () => {
+    const index = collect({
+      "a.ts": "export const readA = (job: { amount: number | null }): number | undefined => {\n  if (job.amount === null) {\n    return undefined;\n  }\n  return job.amount;\n};",
+      "b.ts": "export const readB = (input: { amount: number | null }): number | null => {\n  if (input.amount === null) {\n    return null;\n  }\n  return input.amount;\n};",
+    });
+    expect(index.functions.getNearDuplicateGroups().length).toBeGreaterThan(0);
+    // Not exact duplicates: the nil sentinel and param names differ textually
+    expect(index.functions.getDuplicateGroups()).toHaveLength(0);
+  });
 });
 
 describe("CallSites", () => {

@@ -18,4 +18,8 @@ describe("near-duplicate-function", () => {
   it("flags this.x vs param.x as near-duplicates", () => {
     assertCrossFileInvalid(nearDuplicateFunction, new URL("./invalid-this-vs-param", import.meta.url).pathname);
   });
+
+  it("flags bodies differing only in null vs undefined sentinels", () => {
+    assertCrossFileInvalid(nearDuplicateFunction, new URL("./invalid-nil-sentinel", import.meta.url).pathname);
+  });
 });

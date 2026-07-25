@@ -323,7 +323,7 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 | `duplicate-constant-declaration` | info | audit | Same constant value in multiple files (info: coincidental value equality is common) |
 | `duplicate-inline-type-in-params` | warning | audit | Same inline `{ ... }` param type repeated across signatures |
 | `duplicate-file` | warning | audit | File with identical content to another file |
-| `near-duplicate-function` | warning | audit | Function bodies that match after renaming params and literals -- likely a copy-paste |
+| `near-duplicate-function` | warning | audit | Function bodies that match after renaming params and folding literals (strings, numbers, `null`/`undefined`) -- likely a copy-paste |
 | `duplicate-statement-sequence` | warning | audit | Repeated block of statements across functions or files (identical text; lookup tables that vary only by literal data are not flagged) |
 | `trivial-wrapper` | warning | audit | Function that delegates to another without transformation (skipped when the wrapper specializes a type predicate, introduces generics, reorders args, or partially applies) |
 | `unused-export` | warning | audit | Exported function, type, or constant with no usages in the project. Imports resolve through the checker (path aliases, workspace packages) and usage is merged across tsconfig groups, so an export consumed by a sibling monorepo package counts as used. Consumers outside the scanned tree, such as a published package's API surface, are invisible to the analysis - hence audit tier |

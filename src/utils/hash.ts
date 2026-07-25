@@ -50,6 +50,9 @@ function normalizeBodyText(text: string, paramNames: string[]): string {
   normalized = normalized.replace(/`(?:[^`\\]|\\.)*`/g, '"__STR__"');
   // Normalize numeric literals (standalone numbers, not inside identifiers)
   normalized = normalized.replace(/\b\d+(?:\.\d+)?\b/g, "__NUM__");
+  // Fold nil sentinels: `return null` vs `return undefined` is the classic
+  // copy-paste that near-duplicate detection should survive.
+  normalized = normalized.replace(/\b(?:null|undefined)\b/g, "__NIL__");
   // Normalize parameter names to positional placeholders
   for (let i = 0; i < paramNames.length; i++) {
     const name = paramNames[i] as string;
