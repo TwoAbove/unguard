@@ -654,16 +654,20 @@ function deriveAnonymousName(node: ts.ArrowFunction | ts.FunctionExpression, sou
     if (ts.isPropertyAssignment(grandparent) && ts.isIdentifier(grandparent.name)) {
       return grandparent.name.text;
     }
-    // Callee name + arg index
+    // Human-readable callee name, with argument position only when it disambiguates.
     let calleeName: string | null = null;
     if (ts.isIdentifier(parent.expression)) {
       calleeName = parent.expression.text;
     } else if (ts.isPropertyAccessExpression(parent.expression)) {
-      calleeName = parent.expression.name.text;
+      calleeName = parent.expression.getText(sourceFile);
     }
     if (calleeName) {
       const argIndex = parent.arguments.indexOf(node as ts.Expression);
-      if (argIndex >= 0) return `${calleeName}.$arg${argIndex}`;
+      if (argIndex >= 0) {
+        return parent.arguments.length === 1
+          ? `${calleeName} callback`
+          : `${calleeName} callback (argument ${argIndex + 1})`;
+      }
     }
   }
 

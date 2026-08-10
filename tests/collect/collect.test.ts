@@ -204,9 +204,27 @@ describe("AnonymousFunctions", () => {
         });
       `,
     });
-    const fns = index.functions.getAll().filter((f) => f.name.startsWith("register."));
+    const fns = index.functions.getAll().filter((f) => f.name === "register callback");
     expect(fns).toHaveLength(1);
-    expect(fns[0]?.name).toBe("register.$arg0");
+  });
+
+  it("keeps a qualified callee and human argument position in callback names", () => {
+    const index = collect({
+      "a.ts": `
+        declare const hooks: {
+          register(label: string, cb: (x: string) => string): void;
+        };
+        hooks.register("slug", (input: string) => {
+          const trimmed = input.trim();
+          const lower = trimmed.toLowerCase();
+          return lower.replace(/\\s+/g, "-") + trimmed;
+        });
+      `,
+    });
+    const fns = index.functions.getAll().filter(
+      (f) => f.name === "hooks.register callback (argument 2)",
+    );
+    expect(fns).toHaveLength(1);
   });
 
   it("skips small anonymous functions", () => {
