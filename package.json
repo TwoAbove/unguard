@@ -43,10 +43,9 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"scan": "node ./bin/unguard.mjs scan",
-		"audit": "node ./bin/unguard.mjs audit --fail-on warning",
-		"scan:strict": "node ./bin/unguard.mjs scan --strict",
+		"smell": "node ./bin/unguard.mjs smell --fail-on warning",
 		"demo": "vhs demo/demo.tape && ffmpeg -y -loglevel error -sseof -0.5 -i demo/demo.gif -frames:v 1 -update 1 /tmp/unguard-demo-frame.png",
-		"prepublishOnly": "npm run build && npm run test && npm run scan && npm run audit"
+		"prepublishOnly": "npm run build && npm run test && npm run scan && npm run smell"
 	},
 	"engines": {
 		"node": ">=22"

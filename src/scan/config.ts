@@ -32,12 +32,10 @@ export function resolveScanConfig(options: ScanOptions): ResolvedScanConfig {
   return {
     paths,
     mode: options.mode ?? "scan",
-    strict: options.strict ?? false,
     rules: options.rules ? [...options.rules] : null,
     ignore,
     rulePolicy: toRulePolicyEntries(options.rulePolicy),
     overrides: toResolvedOverrides(options.overrides),
-    showSeverities: normalizeSeveritySet(options.showSeverities),
     failOn: options.failOn ?? DEFAULT_FAIL_ON,
     useGitIgnore: options.useGitIgnore ?? true,
     concurrency: options.concurrency,
@@ -65,10 +63,6 @@ export function toRulePolicyEntries(policy: RulePolicy | undefined): RulePolicyE
   return entries;
 }
 
-function normalizeSeveritySet(levels: Severity[] | undefined): Set<Severity> | null {
-  if (levels === undefined || levels.length === 0) return null;
-  return new Set(levels);
-}
 
 export function isRulePolicySeverity(value: string): value is RulePolicySeverity {
   return value === "off" || value === "info" || value === "warning" || value === "error";

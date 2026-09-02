@@ -29,7 +29,7 @@ export function buildContext(
         file: filename,
         line: line + 1,
         column: character + 1,
-        ...(fix !== undefined ? { fix } : {}),
+        fix,
       });
     },
 

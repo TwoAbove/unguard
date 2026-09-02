@@ -34,9 +34,7 @@ export async function executeScan(options: ScanOptions): Promise<ScanExecutionRe
       rules: activeRules,
       paths: config.paths,
       ignore: config.ignore,
-      strict: config.strict,
       failOn: config.failOn,
-      showSeverities: config.showSeverities,
     });
     const cached = readScanCache(cacheDir);
     const sortedFiles = [...files].sort();

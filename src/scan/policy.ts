@@ -20,7 +20,7 @@ export function buildRuleDescriptors(rules: Rule[]): RuleDescriptor[] {
       rule,
       category: metadata.category,
       tags: metadata.tags,
-      confidence: metadata.confidence,
+      tier: metadata.tier,
     };
   });
 }
@@ -29,15 +29,15 @@ export function resolveActiveRules(
   descriptors: RuleDescriptor[],
   config: ResolvedScanConfig,
 ): Rule[] {
-  const selectedRules = config.rules ? new Set(config.rules) : null;
-  const wantedConfidence = config.mode === "audit" ? "heuristic" : "proven";
+  const selectedRules = config.rules;
+  const wantedTier = config.mode === "smell" ? "smell" : "finding";
   const active: Rule[] = [];
 
   for (const descriptor of descriptors) {
     if (selectedRules) {
-      // An explicit rule filter names what to run; the mode split is moot.
-      if (!selectedRules.has(descriptor.rule.id)) continue;
-    } else if (descriptor.confidence !== wantedConfidence) {
+      // Explicit rule selectors name what to run; the mode split is moot.
+      if (!selectedRules.some((selector) => matchesSelector(descriptor, selector))) continue;
+    } else if (descriptor.tier !== wantedTier) {
       continue;
     }
     const resolvedSeverity = resolveRuleSeverity(descriptor, config);
@@ -59,13 +59,11 @@ function resolveRuleSeverity(descriptor: RuleDescriptor, config: ResolvedScanCon
     severity = entry.severity;
   }
 
-  if (severity === "off") return "off";
-  if (config.strict) return "error";
   return severity;
 }
 
 function matchesSelector(
-  descriptor: Pick<RuleDescriptor, "category" | "tags" | "confidence"> & { rule: { id: string } },
+  descriptor: Pick<RuleDescriptor, "category" | "tags" | "tier"> & { rule: { id: string } },
   selector: string,
 ): boolean {
   if (selector.startsWith("category:")) {
@@ -74,8 +72,8 @@ function matchesSelector(
   if (selector.startsWith("tag:")) {
     return descriptor.tags.includes(selector.slice("tag:".length));
   }
-  if (selector.startsWith("confidence:")) {
-    return descriptor.confidence === selector.slice("confidence:".length);
+  if (selector.startsWith("tier:")) {
+    return descriptor.tier === selector.slice("tier:".length);
   }
   if (selector === descriptor.rule.id) return true;
   if (!selector.includes("*")) return false;
@@ -98,9 +96,7 @@ export function finalizeScanResult(
   const effective = config.baseline
     ? applyBaseline(afterOverrides, config.baseline, process.cwd())
     : afterOverrides;
-  const visibleDiagnostics = config.showSeverities
-    ? effective.filter((d) => config.showSeverities?.has(d.severity))
-    : effective;
+  const visibleDiagnostics = effective;
 
   return {
     diagnostics,
@@ -135,7 +131,7 @@ export function applyOverrides(
       rule: { id: diagnostic.ruleId },
       category: metadata.category,
       tags: metadata.tags,
-      confidence: metadata.confidence,
+      tier: metadata.tier,
     };
 
     let severity: RulePolicySeverity = diagnostic.severity;

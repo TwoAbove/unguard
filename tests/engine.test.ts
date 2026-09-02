@@ -20,17 +20,21 @@ describe("engine", () => {
     expect(result.diagnostics).toHaveLength(0);
   });
 
-  it("promotes to errors in strict mode", async () => {
-    const result = await scan({ paths: ["tests/rules/no-swallowed-catch/invalid.ts"], strict: true });
-    expect(result.diagnostics.every((d) => d.severity === "error")).toBe(true);
-  });
-
-  it("filters by rule ID", async () => {
+  it("selects by rule ID", async () => {
     const result = await scan({
       paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
       rules: ["no-any-cast"],
     });
     expect(result.diagnostics).toHaveLength(0);
+  });
+
+  it("selects rules by selector", async () => {
+    const result = await scan({
+      paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
+      rules: ["category:error-handling"],
+      cache: false,
+    });
+    expect(result.diagnostics.some((diagnostic) => diagnostic.ruleId === "no-swallowed-catch")).toBe(true);
   });
 
   it("skips declaration files in source-only analysis", async () => {
@@ -197,36 +201,36 @@ describe("engine", () => {
 });
 
 describe("rule tiers", () => {
-  it("scan mode skips heuristic rules", async () => {
+  it("scan mode skips smell-tier rules", async () => {
     const lib = new URL("./fixtures/cross-group-usage/lib/helpers.ts", import.meta.url).pathname;
     const result = await scan({ paths: [lib], cache: false });
     expect(result.diagnostics.filter((d) => d.ruleId === "unused-export")).toHaveLength(0);
   });
 
-  it("audit mode skips proven rules", async () => {
+  it("smell mode skips finding-tier rules", async () => {
     const result = await scan({
       paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
-      mode: "audit",
+      mode: "smell",
       cache: false,
     });
     expect(result.diagnostics.filter((d) => d.ruleId === "no-swallowed-catch")).toHaveLength(0);
   });
 
-  it("an explicit rule filter bypasses the mode split", async () => {
+  it("an explicit rule selector bypasses the mode split", async () => {
     const result = await scan({
       paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
-      mode: "audit",
+      mode: "smell",
       rules: ["no-swallowed-catch"],
       cache: false,
     });
     expect(result.diagnostics.length).toBeGreaterThan(0);
   });
 
-  it("supports confidence selectors in rule policy", async () => {
+  it("supports tier selectors in rule policy", async () => {
     const result = await scan({
       paths: ["tests/rules/no-swallowed-catch/invalid.ts"],
       rules: ["no-swallowed-catch"],
-      rulePolicy: { "confidence:proven": "off" },
+      rulePolicy: { "tier:finding": "off" },
       cache: false,
     });
     expect(result.diagnostics).toHaveLength(0);
@@ -286,9 +290,7 @@ describe("cache", () => {
       unguardVersion: "test",
       paths: ["src"],
       ignore: [],
-      strict: false,
       failOn: "info",
-      showSeverities: null,
     };
     const keyA = computeScanKey({ ...baseInput, rules: allRules });
     const keyB = computeScanKey({ ...baseInput, rules: allRules.slice(0, 5) });

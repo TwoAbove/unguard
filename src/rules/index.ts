@@ -35,6 +35,8 @@ import { noUnvalidatedCast } from "./ts/no-unvalidated-cast.ts";
 import { noUselessAwait } from "./ts/no-useless-await.ts";
 import { redundantBooleanBranch } from "./ts/redundant-boolean-branch.ts";
 import { redundantDestructureDefault } from "./ts/redundant-destructure-default.ts";
+import { redundantConditionalSpread } from "./cross-file/redundant-conditional-spread.ts";
+import { noUndefinedClobber } from "./ts/no-undefined-clobber.ts";
 import { redundantNarrowingThenCast } from "./ts/redundant-narrowing-then-cast.ts";
 import { trivialTypeAlias } from "./ts/trivial-type-alias.ts";
 import { returnTypeWidensViaDestructure } from "./ts/return-type-widens-via-destructure.ts";
@@ -64,23 +66,18 @@ export type RuleCategory =
 /**
  * The epistemic tier of a rule, orthogonal to severity.
  *
- * - `proven`: the checker or AST demonstrates the defect — the fallback is
- *   dead, the cast evades, the error vanishes. Every finding demands a fix
- *   (or an explicit `@unguard` annotation). These run on `unguard scan`.
- * - `heuristic`: pattern evidence that warrants review — duplication, API
- *   shape, speculative parameters. A finding can have a correct alternative
- *   reading the analysis cannot see (deliberate test explicitness, parallel
- *   naming, convention-driven usage). These run on `unguard audit`.
- *
- * The test for `proven`: would deleting/changing the flagged code ever be
- * wrong when the types are honest? If yes, the rule is heuristic.
+ * - `finding`: the checker or graph demonstrates the defect, so every report
+ *   demands a fix (or an explicit `@unguard` annotation). These run on
+ *   `unguard scan`.
+ * - `smell`: the report has a correct alternative reading the analysis cannot
+ *   see and needs a human decision. These run on `unguard smell`.
  */
-export type RuleConfidence = "proven" | "heuristic";
+export type RuleTier = "finding" | "smell";
 
 export interface RuleMetadata {
   category: RuleCategory;
   tags: string[];
-  confidence: RuleConfidence;
+  tier: RuleTier;
 }
 
 export const allRules: Rule[] = [
@@ -102,6 +99,8 @@ export const allRules: Rule[] = [
   noUselessAwait,
   trivialTypeAlias,
   redundantDestructureDefault,
+  redundantConditionalSpread,
+  noUndefinedClobber,
   noAnyCast,
   noExplicitAnyAnnotation,
   duplicateInlineTypeInParams,
@@ -139,71 +138,77 @@ export const allRules: Rule[] = [
 ];
 
 const ruleMetadata: Record<string, RuleMetadata> = {
-  "no-any-cast": { category: "type-evasion", tags: ["safety"], confidence: "proven" },
-  "no-explicit-any-annotation": { category: "type-evasion", tags: ["safety"], confidence: "proven" },
-  "no-inline-type-assertion": { category: "type-evasion", tags: ["safety"], confidence: "proven" },
-  "no-type-assertion": { category: "type-evasion", tags: ["safety"], confidence: "proven" },
-  "no-ts-ignore": { category: "type-evasion", tags: ["safety"], confidence: "proven" },
-  "no-ts-expect-error": { category: "type-evasion", tags: ["safety"], confidence: "proven" },
-  "no-never-cast": { category: "type-evasion", tags: ["safety"], confidence: "proven" },
-  "no-redundant-cast": { category: "type-evasion", tags: ["type-aware"], confidence: "proven" },
-  "no-unvalidated-cast": { category: "type-evasion", tags: ["safety", "type-aware"], confidence: "proven" },
-  "redundant-narrowing-then-cast": { category: "type-evasion", tags: ["type-aware"], confidence: "proven" },
-  "return-type-widens-via-destructure": { category: "type-evasion", tags: ["type-aware", "safety"], confidence: "proven" },
+  "no-any-cast": { category: "type-evasion", tags: ["safety"], tier: "finding" },
+  "no-explicit-any-annotation": { category: "type-evasion", tags: ["safety"], tier: "finding" },
+  "no-inline-type-assertion": { category: "type-evasion", tags: ["safety"], tier: "finding" },
+  "no-type-assertion": { category: "type-evasion", tags: ["safety"], tier: "finding" },
+  "no-ts-ignore": { category: "type-evasion", tags: ["safety"], tier: "finding" },
+  "no-ts-expect-error": { category: "type-evasion", tags: ["safety"], tier: "finding" },
+  "no-never-cast": { category: "type-evasion", tags: ["safety"], tier: "finding" },
+  "no-redundant-cast": { category: "type-evasion", tags: ["type-aware"], tier: "finding" },
+  "no-unvalidated-cast": { category: "type-evasion", tags: ["safety", "type-aware"], tier: "finding" },
+  "redundant-narrowing-then-cast": { category: "type-evasion", tags: ["type-aware"], tier: "finding" },
+  "return-type-widens-via-destructure": { category: "type-evasion", tags: ["type-aware", "safety"], tier: "finding" },
   // Converting `(x): boolean` to a predicate is a design suggestion, not a defect.
-  "prefer-type-predicate": { category: "interface-design", tags: ["api", "type-aware"], confidence: "heuristic" },
+  "prefer-type-predicate": { category: "interface-design", tags: ["api", "type-aware"], tier: "smell" },
 
-  "no-optional-property-access": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-optional-element-access": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-optional-call": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-nullish-coalescing": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-logical-or-fallback": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-null-ternary-normalization": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-coalesce-then-guard": { category: "defensive-code", tags: ["readability"], confidence: "proven" },
+  "no-optional-property-access": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-optional-element-access": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-optional-call": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-nullish-coalescing": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-logical-or-fallback": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-null-ternary-normalization": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-coalesce-then-guard": { category: "defensive-code", tags: ["readability"], tier: "finding" },
   // Fusing the call's failure mode into a fallback can be a deliberate choice.
-  "no-await-coalesce": { category: "defensive-code", tags: ["type-aware"], confidence: "heuristic" },
-  "no-non-null-assertion": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-double-negation-coercion": { category: "defensive-code", tags: ["readability"], confidence: "proven" },
-  "no-redundant-existence-guard": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "no-dead-narrowing": { category: "defensive-code", tags: ["type-aware", "safety"], confidence: "proven" },
-  "redundant-boolean-branch": { category: "defensive-code", tags: ["readability", "type-aware"], confidence: "proven" },
-  "no-useless-await": { category: "defensive-code", tags: ["readability", "type-aware"], confidence: "proven" },
-  "no-coalesce-undefined": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
-  "redundant-destructure-default": { category: "defensive-code", tags: ["type-aware"], confidence: "proven" },
+  "no-await-coalesce": { category: "defensive-code", tags: ["type-aware"], tier: "smell" },
+  "no-non-null-assertion": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-double-negation-coercion": { category: "defensive-code", tags: ["readability"], tier: "finding" },
+  "no-redundant-existence-guard": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "no-dead-narrowing": { category: "defensive-code", tags: ["type-aware", "safety"], tier: "finding" },
+  "redundant-boolean-branch": { category: "defensive-code", tags: ["readability", "type-aware"], tier: "finding" },
+  "no-useless-await": { category: "defensive-code", tags: ["readability", "type-aware"], tier: "finding" },
+  "no-coalesce-undefined": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  "redundant-destructure-default": { category: "defensive-code", tags: ["type-aware"], tier: "finding" },
+  // EXPERIMENTAL: fires only with a demand-side certificate — no reachable
+  // key-presence observer in the project; external calls, any, JSX, and rest
+  // patterns conservatively count as observers.
+  "redundant-conditional-spread": { category: "defensive-code", tags: ["type-aware", "cross-file"], tier: "smell" },
+  // EXPERIMENTAL: some overwrites deliberately erase (patch/reset semantics).
+  "no-undefined-clobber": { category: "defensive-code", tags: ["type-aware", "safety"], tier: "smell" },
   // Roughly half of trivial aliases are deliberate parallel/boundary naming.
-  "trivial-type-alias": { category: "interface-design", tags: ["api", "readability"], confidence: "heuristic" },
+  "trivial-type-alias": { category: "interface-design", tags: ["api", "readability"], tier: "smell" },
 
-  "no-error-rewrap": { category: "error-handling", tags: ["safety"], confidence: "proven" },
-  "no-swallowed-catch": { category: "error-handling", tags: ["safety"], confidence: "proven" },
+  "no-error-rewrap": { category: "error-handling", tags: ["safety"], tier: "finding" },
+  "no-swallowed-catch": { category: "error-handling", tags: ["safety"], tier: "finding" },
 
-  "duplicate-inline-type-in-params": { category: "cross-file", tags: ["duplicate", "api"], confidence: "heuristic" },
-  // The body's coercion proves the optionality is fake; the fix is mechanical.
-  "optional-param-coerced-in-body": { category: "interface-design", tags: ["api"], confidence: "proven" },
-  // Type-proven divergence between the interface contract and the implementation.
-  "no-defaulted-required-port-arg": { category: "interface-design", tags: ["api", "type-aware"], confidence: "proven" },
-  "duplicate-type-declaration": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "duplicate-type-name": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "duplicate-function-declaration": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "duplicate-function-name": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "duplicate-constant-declaration": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "optional-arg-always-used": { category: "cross-file", tags: ["api"], confidence: "heuristic" },
-  "optional-arg-never-used": { category: "cross-file", tags: ["api"], confidence: "heuristic" },
-  "constant-argument": { category: "cross-file", tags: ["api"], confidence: "heuristic" },
-  "explicit-null-arg": { category: "cross-file", tags: ["api"], confidence: "heuristic" },
+  "duplicate-inline-type-in-params": { category: "cross-file", tags: ["duplicate", "api"], tier: "smell" },
+  // The body's coercion demonstrates that the optionality is fake; the fix is mechanical.
+  "optional-param-coerced-in-body": { category: "interface-design", tags: ["api"], tier: "finding" },
+  // Type-demonstrated divergence between the interface contract and the implementation.
+  "no-defaulted-required-port-arg": { category: "interface-design", tags: ["api", "type-aware"], tier: "finding" },
+  "duplicate-type-declaration": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "duplicate-type-name": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "duplicate-function-declaration": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "duplicate-function-name": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "duplicate-constant-declaration": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "optional-arg-always-used": { category: "cross-file", tags: ["api"], tier: "smell" },
+  "optional-arg-never-used": { category: "cross-file", tags: ["api"], tier: "smell" },
+  "constant-argument": { category: "cross-file", tags: ["api"], tier: "smell" },
+  "explicit-null-arg": { category: "cross-file", tags: ["api"], tier: "smell" },
 
   // Code-splitting and lazy loading are legitimate dynamic imports.
-  "no-dynamic-import": { category: "imports", tags: ["safety"], confidence: "heuristic" },
+  "no-dynamic-import": { category: "imports", tags: ["safety"], tier: "smell" },
 
-  "near-duplicate-function": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "trivial-wrapper": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
+  "near-duplicate-function": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "trivial-wrapper": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
   // Convention-driven and reflective usage is invisible to import analysis.
-  "unused-export": { category: "cross-file", tags: ["api"], confidence: "heuristic" },
-  "duplicate-file": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "duplicate-statement-sequence": { category: "cross-file", tags: ["duplicate"], confidence: "heuristic" },
-  "dead-overload": { category: "cross-file", tags: ["api", "type-evasion"], confidence: "heuristic" },
+  "unused-export": { category: "cross-file", tags: ["api"], tier: "smell" },
+  "duplicate-file": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "duplicate-statement-sequence": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "dead-overload": { category: "cross-file", tags: ["api", "type-evasion"], tier: "smell" },
 
-  "repeated-literal-property": { category: "interface-design", tags: ["duplicate", "readability"], confidence: "heuristic" },
-  "repeated-return-shape": { category: "interface-design", tags: ["duplicate", "readability"], confidence: "heuristic" },
+  "repeated-literal-property": { category: "interface-design", tags: ["duplicate", "readability"], tier: "smell" },
+  "repeated-return-shape": { category: "interface-design", tags: ["duplicate", "readability"], tier: "smell" },
 };
 
 export function getRuleMetadata(ruleId: string): RuleMetadata {

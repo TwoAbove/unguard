@@ -13,13 +13,13 @@ npm run typecheck      # tsc --noEmit
 npm run scan           # run unguard on src via unguard.config.json (fail-on=error)
 ```
 
-CLI: `node bin/unguard.mjs scan [paths] [--config <path>] [--strict] [--filter <rule-id>] [--rule <selector=severity>] [--ignore <glob>] [--severity=<levels>] [--fail-on=<none|error|warning|info>] [--format=grouped|flat|json] [--fix] [--no-baseline] [--no-cache]`
+CLI: `node bin/unguard.mjs scan [paths] [--only <selector>] [--rule <selector=severity>] [--ignore <glob>] [--json] [--fail-on=<none|error|warning|info>] [--config <path>] [--concurrency <n>] [--no-baseline] [--no-cache]`
 
-Rule tiers (`RuleConfidence` in `src/rules/index.ts`): every rule is `proven` (checker/AST demonstrates the defect — every finding demands a fix) or `heuristic` (pattern evidence with a possible correct alternative reading). `scan` runs proven rules; the `audit` subcommand runs heuristic rules with `--fail-on` defaulting to `none`, so it never gates unless asked to. An explicit rule selection (`--filter`, `rules` option) bypasses the tiers.
+Rule tiers (`RuleTier` in `src/rules/index.ts`): every rule is a `finding` (the checker or graph demonstrates the report, so it demands a fix) or a `smell` (a correct alternative reading exists that the analysis cannot see, so a human must decide). `scan` runs finding-tier rules; the `smell` subcommand runs smell-tier rules with `--fail-on` defaulting to `none`, so it never gates unless asked to. An explicit rule selection (`--only`, `rules` option) bypasses the tiers.
 
 `baseline` subcommand: `node bin/unguard.mjs baseline [paths]` writes `unguard.baseline.json` (per file+rule counts). Scans auto-load it; a (file, rule) group is suppressed while its count stays ≤ the recorded number. `--no-baseline` ignores it.
 
-`--fix` applies `Diagnostic.fix` edits (only attached when provably semantics-preserving), then reports and exits on what remains.
+The `fix` subcommand applies `Diagnostic.fix` edits (only attached when provably semantics-preserving), then reports and exits on what remains.
 
 Config: `unguard.config.json` (auto-discovered) supports `paths`, `ignore`, `rules`, `overrides`, `failOn`.
 Rule severity values: `off | info | warning | error`; selectors support:
@@ -27,7 +27,7 @@ Rule severity values: `off | info | warning | error`; selectors support:
 - wildcard (`duplicate-*`)
 - `category:<name>` (example: `category:cross-file`)
 - `tag:<name>` (example: `tag:safety`)
-- `confidence:<proven|heuristic>`
+- `tier:<finding|smell>`
 `overrides` is an array of `{ files: [globs], rules: { selector: severity } }` — path-scoped rule policy applied post-analysis to diagnostics in matching files (gitignore syntax, cwd-relative; `off` drops). See `applyOverrides` in `src/scan/policy.ts`.
 Ignore source: built-ins + generated files (`*.gen.*`, `*.generated.*`) + `.gitignore` + CLI/config ignore globs.
 
@@ -57,7 +57,7 @@ Other key files:
 - `src/rules/cross-file/object-shape.ts` — shared helpers for object literal shape analysis (`extractPropertyNames`, `getShapeGroup`)
 - `src/collect/index.ts` — `collectProject(program)`, builds `ProjectIndex` (types, functions, constants, callSites, imports, fileHashes, statementSequences, inlineParamTypes)
 - `src/collect/base-registry.ts` — `BaseRegistry<T>` and `DualHashRegistry<T>` base classes
-- `src/rules/index.ts` — rule registry + rule metadata catalog (`category`, `tags`, `confidence`)
+- `src/rules/index.ts` — rule registry + rule metadata catalog (`category`, `tags`, `tier`)
 - `src/utils/hash.ts` — hashing: `hashTypeShape`, `hashFunctionBody`, `normalizeBody`, `normalizeText`
 
 ## Writing rules
@@ -85,13 +85,13 @@ export const myRule: TSRule = {
 };
 ```
 
-Register in `src/rules/index.ts` (both `allRules` and the metadata catalog — `getRuleMetadata` throws on rules without an entry). The catalog entry must classify `confidence: "proven" | "heuristic"`: if deleting or changing the flagged code could ever be wrong while the types are honest, the rule is heuristic; otherwise proven. Add the rule to the appropriate table in `README.md`, including the Tier column.
+Register in `src/rules/index.ts` (both `allRules` and the metadata catalog — `getRuleMetadata` throws on rules without an entry). The catalog entry must classify `tier: "finding" | "smell"`: if a report has a correct alternative reading while the types are honest, the rule is a smell; otherwise it is a finding. Add the rule to the appropriate table in `README.md`, including the Tier column.
 
 Optional `TSRule` fields:
 - `syntaxKinds: ts.SyntaxKind[]` — dispatch `visit()` only for these node kinds (perf)
 - `requiresTypeInfo: false` — rule is purely syntactic
 - `requiresStrictNullChecks: true` — rule is skipped (with a warning) when the tsconfig group lacks strictNullChecks
-- attach a `fix: FixEdit` (`{start, end, text}`) via `ctx.report(node, message, fix)` only when the replacement is provably semantics-preserving; `--fix` applies it mechanically
+- attach a `fix: FixEdit` (`{start, end, text}`) via `ctx.report(node, message, fix)` only when the replacement is provably semantics-preserving; the `fix` subcommand applies it mechanically
 
 #### TSVisitContext
 

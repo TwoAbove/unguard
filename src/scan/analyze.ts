@@ -260,7 +260,8 @@ function requiresProgram(tsRules: TSRule[], indexNeeds: ProjectIndexNeeds): bool
   if (tsRules.some((rule) => rule.requiresTypeInfo !== false)) return true;
   return indexNeeds.has("functionSymbols")
     || indexNeeds.has("callSiteSymbols")
-    || indexNeeds.has("overloadCallSignatures");
+    || indexNeeds.has("overloadCallSignatures")
+    || indexNeeds.has("presence");
 }
 
 function collectIndexNeeds(rules: CrossFileRule[]): ProjectIndexNeeds {

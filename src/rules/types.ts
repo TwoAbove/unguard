@@ -85,7 +85,8 @@ export type ProjectIndexNeed =
   | "imports"
   | "fileHashes"
   | "statementSequences"
-  | "inlineParamTypes";
+  | "inlineParamTypes"
+  | "presence";
 
 export interface CrossFileRule {
   id: string;

@@ -16,6 +16,7 @@ import type { Diagnostic, FixEdit, ProjectIndexNeed, SemanticServices, TSRule, T
 import { buildContext } from "../typecheck/walk.ts";
 import { isInlineParamType } from "../typecheck/utils.ts";
 import { SemanticCache } from "../typecheck/semantic-cache.ts";
+import { collectPresence, createPresenceIndex, type PresenceIndex } from "./presence.ts";
 
 export interface CommentInfo {
   type: "Line" | "Block";
@@ -37,6 +38,7 @@ export interface ProjectIndex {
   fileHashes: Map<string, string[]>;
   statementSequences: StatementSequenceRegistry;
   inlineParamTypes: InlineParamTypeRegistry;
+  presence: PresenceIndex;
 }
 
 export interface CollectProjectOptions {
@@ -108,6 +110,7 @@ const ALL_PROJECT_INDEX_NEEDS: ProjectIndexNeeds = new Set<ProjectIndexNeed>([
   "fileHashes",
   "statementSequences",
   "inlineParamTypes",
+  "presence",
 ]);
 
 export function createProjectIndex(): ProjectIndex {
@@ -121,6 +124,7 @@ export function createProjectIndex(): ProjectIndex {
     fileHashes: new Map(),
     statementSequences: new StatementSequenceRegistry(),
     inlineParamTypes: new InlineParamTypeRegistry(),
+    presence: createPresenceIndex(),
   };
 }
 
@@ -195,7 +199,7 @@ function buildSyntaxContext(
         file: filename,
         line: line + 1,
         column: character + 1,
-        ...(fix !== undefined ? { fix } : {}),
+        fix,
       });
     },
 
@@ -289,7 +293,7 @@ export function collectProject(
 
     function visit(node: ts.Node): void {
       if (shouldCollect) {
-        collectIndexNode(node, file, sourceFile, semantics, index, needs, overloadCalleeNames, checker);
+        collectIndexNode(node, file, sourceFile, semantics, index, needs, overloadCalleeNames, checker, compilerOptions);
       }
       if (ruleDispatch) {
         visitRuleContexts(node, ruleDispatch);
@@ -312,7 +316,12 @@ function collectIndexNode(
   overloadCalleeNames?: Set<string>,
   /** Absent in source-only mode; module specifiers stay textually resolved. */
   checker?: ts.TypeChecker,
+  /** Absent in source-only mode; presence facts need type resolution. */
+  compilerOptions?: ts.CompilerOptions,
 ): void {
+  if (needs.has("presence") && compilerOptions !== undefined) {
+    collectPresence(node, file, sourceFile, semantics, compilerOptions, index.presence);
+  }
   switch (node.kind) {
     case ts.SyntaxKind.TypeAliasDeclaration:
     case ts.SyntaxKind.InterfaceDeclaration:

@@ -49,9 +49,9 @@ export function assertInvalid(rule: TSRule, fixturePath: string): void {
   }
 }
 
-/** Collect all .ts files from a directory. */
+/** Collect all .ts/.tsx files from a directory. */
 function collectFixtureFiles(dir: string): string[] {
-  return fg.sync(`${dir}/**/*.ts`, { absolute: true });
+  return fg.sync(`${dir}/**/*.{ts,tsx}`, { absolute: true });
 }
 
 /** Run a cross-file rule against a directory of fixtures, return diagnostics. */

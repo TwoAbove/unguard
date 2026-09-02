@@ -84,7 +84,7 @@ Keep typescript-eslint - unguard is a complement to it, not a replacement. Its `
 
 - **Whole-project analysis.** unguard indexes every call site, import, and export across your tsconfig groups (and is monorepo-aware). Lint rules see one file at a time while unguard can prove an optional parameter is never passed, an argument is always the same literal, an export is never imported.
 - **Defensive-pattern focus.** Swallowed catches detected structurally (does any expression in the catch reference the error?), `throw new Error(e.message)` losing the cause, unvalidated casts of external data, defaults that widen interface contracts.
-- **Tiers split by proof.** `scan` runs only rules whose findings the checker demonstrates - it's designed to gate CI without false-positive fatigue. Everything debatable lives in `audit`.
+- **Tiers split by certainty.** `scan` runs finding-tier rules whose reports demand a fix because the checker or graph demonstrates them. Cases with a correct alternative reading live in `smell` for human review.
 - **Zero config.** `npx unguard` on any TypeScript repo.
 
 ## For AI coding agents
@@ -108,34 +108,31 @@ And gate CI:
 ## Usage
 
 ```bash
-unguard                                  # scan files/directories
-unguard audit                            # run heuristic rules as review prompts
+unguard                                  # scan files/directories for findings
+unguard smell                            # report smells for human review
+unguard fix                              # apply certified fixes, report what remains
 unguard --config ./unguard.config.json   # load config
 unguard --ignore '**/*.gen.ts'           # add ignore globs
-unguard --filter no-any-cast             # run a single rule
+unguard --only no-any-cast               # run rules matching a selector
 unguard --rule duplicate-*=warning       # override rule severity/policy
 unguard --rule category:cross-file=warning
 unguard --rule tag:safety=error
-unguard --severity=error,warning         # show errors+warnings
 unguard --fail-on=error                  # fail only on errors
-unguard --format=flat                    # one-line-per-diagnostic, grepable
-unguard --format=flat | grep error
-unguard --format=json                    # machine-readable report
-unguard --fix                            # apply auto-fixes, report what remains
-unguard baseline                         # record current issues as the baseline
+unguard --json                           # machine-readable report
+unguard baseline                         # record current findings as the baseline
 unguard --no-baseline                    # ignore unguard.baseline.json for this scan
 unguard --concurrency 1                  # disable worker-thread parallelism, can be slow for large codebases
 unguard --no-cache                       # bypass on-disk diagnostic cache
 ```
 
-### Two tiers: `scan` and `audit`
+### Two tiers: findings and smells
 
-Every rule is classified by confidence:
+Every rule belongs to one tier:
 
-- **proven** - the checker or AST demonstrates the defect; every finding demands a fix (or an explicit `@unguard` annotation). `unguard scan` runs these and is meant to gate CI or commits.
-- **heuristic** - strong pattern evidence, but a correct alternative reading exists: deliberate duplication, API surface for external consumers, intentionally optional params. `unguard audit` runs these and exits 0 unless `--fail-on` is passed explicitly, so findings surface for review without blocking anything.
+- **finding** - the checker or graph demonstrates the report, so it demands a fix (or an explicit `@unguard` annotation). `unguard scan` runs finding-tier rules and is meant to gate CI or commits.
+- **smell** - the analysis cannot see enough to choose between a likely problem and a correct alternative reading, such as deliberate duplication, an API surface for external consumers, or an intentionally optional parameter. `unguard smell` reports these for human review and exits 0 unless `--fail-on` is passed explicitly.
 
-`--filter <rule>` and explicit `rules` selections bypass the tiers - a rule requested by name runs in either command.
+`--only <selector>` and explicit `rules` selections bypass the tiers - a matching rule runs in either command.
 
 ### Config
 
@@ -175,7 +172,7 @@ Selectors support:
 - wildcard: `duplicate-*`
 - category: `category:cross-file`
 - tag: `tag:safety`
-- confidence tier: `confidence:proven`, `confidence:heuristic`
+- tier: `tier:finding`, `tier:smell`
 
 `overrides` entries apply a rule policy only to diagnostics in files matching the listed globs (gitignore syntax, relative to the working directory). Later entries win; `off` drops the diagnostic. Typical use: relaxing rules in test directories, where non-null assertions and duplication are often deliberate.
 
@@ -202,30 +199,23 @@ Use `--fail-on=error` in CI to fail only on errors while still showing all diagn
 unguard src --fail-on=error
 ```
 
-`--severity` filters display only. `--fail-on` evaluates all diagnostics after rule policy.
 
-`unguard audit` defaults to `--fail-on=none` and exits 0 regardless of findings. Pass `--fail-on` explicitly to make audit gate.
+`unguard smell` defaults to `--fail-on=none` and exits 0 regardless of smells. Pass `--fail-on` explicitly to make it gate.
 
 ### Output formats
 
-**Grouped** (default) -- diagnostics grouped by file:
+Grouped text output is the default, with diagnostics grouped by file:
 
 ```txt
 src/lib/probe.ts
   37:4       warning  Catch swallows the error...  no-swallowed-catch
 ```
 
-**Flat** (`--format=flat`) -- one line per diagnostic, grepable:
-
-```txt
-src/lib/probe.ts:37:4 warning [no-swallowed-catch] Catch swallows the error...
-```
-
-**JSON** (`--format=json`) -- machine-readable, for CI integrations:
+Use `--json` for a machine-readable report. Scan and fix reports use `findings`; smell reports use `smells`:
 
 ```json
 {
-  "diagnostics": [
+  "findings": [
     {
       "file": "src/lib/probe.ts",
       "line": 37,
@@ -243,31 +233,31 @@ src/lib/probe.ts:37:4 warning [no-swallowed-catch] Catch swallows the error...
 
 ### Auto-fix
 
-`--fix` applies fixes for diagnostics whose replacement is provably semantics-preserving (dead `??` fallbacks, dead `?.`, no-op `await`, redundant casts, `cond ? true : false`, and similar), then reports what remains. The exit code reflects only the remaining diagnostics.
+`unguard fix` applies certified fixes for diagnostics with semantics-preserving replacements (dead `??` fallbacks, dead `?.`, no-op `await`, redundant casts, `cond ? true : false`, and similar), then reports what remains. The exit code reflects only the remaining findings.
 
 ### Baseline
 
-Adopting unguard in an existing codebase? `unguard baseline src` records every current issue in `unguard.baseline.json`. Subsequent scans suppress a `(file, rule)` group as long as its count stays at or below the recorded number - new issues anywhere still fail, and fixing old ones ratchets the allowance down on the next `unguard baseline`. Use `--no-baseline` to see the full picture.
+Adopting unguard in an existing codebase? `unguard baseline src` records every current finding in `unguard.baseline.json`. Subsequent scans suppress a `(file, rule)` group as long as its count stays at or below the recorded number - new findings anywhere still fail, and fixing old ones ratchets the allowance down on the next `unguard baseline`. Use `--no-baseline` to see the full picture.
 
 ## Current Rules
 
-The **Tier** column says which command runs the rule: `scan` (proven) or `audit` (heuristic).
+The **Tier** column says which command runs the rule: `scan` for a finding or `smell` for a smell.
 
 ### Type system evasion
 
 | Rule | Severity | Tier | What it catches |
 | ---- | -------- | ---- | --------------- |
-| `no-any-cast` | error | scan | `x as any` -- erases type safety for everything downstream of the cast |
-| `no-explicit-any-annotation` | error | scan | `param: any`, `const x: any` -- an `any` annotation where a real type (or `unknown`) belongs |
-| `no-inline-type-assertion` | error | scan | `x as { ... }`, `<{ ... }>x` -- asserting into an anonymous inline shape; name the type or fix it upstream |
-| `no-type-assertion` | error | scan | `x as unknown as T` -- the double assertion that can connect any two types |
-| `no-ts-ignore` | error | scan | `@ts-ignore` -- silences the checker unconditionally |
-| `no-ts-expect-error` | warning | scan | `@ts-expect-error` -- self-expiring, but still an evasion |
-| `no-never-cast` | warning | scan | `x as never` -- silences the checker completely, usually to force past an exhaustiveness error |
-| `no-redundant-cast` | error | scan | `x as T` where `x` already has type `T` |
-| `no-unvalidated-cast` | error | scan | `JSON.parse(...) as T`, `await fetch(...).json() as T` -- casting external data into a shape nothing has checked |
-| `redundant-narrowing-then-cast` | warning | scan | `if (typeof x === "string") { (x as string).length }` -- the `if` already narrowed `x`, so the cast adds nothing |
-| `return-type-widens-via-destructure` | warning | scan | `const [x] = await db...returning(); return x;` in a function declared to return `T` -- an array element is really `T \| undefined`, so the return type hides the empty case |
+| `no-any-cast` | error | finding | `x as any` -- erases type safety for everything downstream of the cast |
+| `no-explicit-any-annotation` | error | finding | `param: any`, `const x: any` -- an `any` annotation where a real type (or `unknown`) belongs |
+| `no-inline-type-assertion` | error | finding | `x as { ... }`, `<{ ... }>x` -- asserting into an anonymous inline shape; name the type or fix it upstream |
+| `no-type-assertion` | error | finding | `x as unknown as T` -- the double assertion that can connect any two types |
+| `no-ts-ignore` | error | finding | `@ts-ignore` -- silences the checker unconditionally |
+| `no-ts-expect-error` | warning | finding | `@ts-expect-error` -- self-expiring, but still an evasion |
+| `no-never-cast` | warning | finding | `x as never` -- silences the checker completely, usually to force past an exhaustiveness error |
+| `no-redundant-cast` | error | finding | `x as T` where `x` already has type `T` |
+| `no-unvalidated-cast` | error | finding | `JSON.parse(...) as T`, `await fetch(...).json() as T` -- casting external data into a shape nothing has checked |
+| `redundant-narrowing-then-cast` | warning | finding | `if (typeof x === "string") { (x as string).length }` -- the `if` already narrowed `x`, so the cast adds nothing |
+| `return-type-widens-via-destructure` | warning | finding | `const [x] = await db...returning(); return x;` in a function declared to return `T` -- an array element is really `T \| undefined`, so the return type hides the empty case |
 
 ### Defensive code (type-aware)
 
@@ -277,67 +267,67 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 
 | Rule | Severity | Tier | What it catches |
 | ---- | -------- | ---- | --------------- |
-| `no-optional-property-access` | warning | scan | `obj?.prop` on a non-nullable type |
-| `no-optional-element-access` | warning | scan | `obj?.[key]` on a non-nullable type |
-| `no-optional-call` | warning | scan | `fn?.()` on a non-nullable type |
-| `no-nullish-coalescing` | warning | scan | `x ?? fallback` on a non-nullable type |
-| `no-logical-or-fallback` | warning | scan | `map.get(k) \|\| fallback`, `count \|\| 1` -- `\|\|` swallows `0` and `""`; use `??` |
-| `no-null-ternary-normalization` | warning | scan | `x == null ? fallback : x` -- a hand-rolled `??`: dead if the type is non-nullable, and a sign the type needs fixing if it isn't |
-| `no-coalesce-then-guard` | warning | scan | `const x = a ?? null; if (x == null)` -- the `if` re-asks the question the `??` just answered |
-| `no-await-coalesce` | warning | audit | `await fn() ?? fallback` -- defaulting away a call's nullable result hides why it can be empty; check it and branch instead (built-in lookups like `Map.get` and `Array.find` are exempt) |
-| `no-non-null-assertion` | warning | scan | `x!` on a nullable type without a local narrowing guard |
-| `no-double-negation-coercion` | warning | scan | `!!value` inside an `if`/`while`/ternary test -- the construct already coerces (`const flag = !!x` and other places that need an actual boolean are fine) |
-| `no-redundant-existence-guard` | warning | scan | `obj && obj.prop` on a non-nullable type |
-| `no-dead-narrowing` | warning | scan | Conditions statically decided by the operand's declared type: truthiness checks that can never fail, `typeof` comparisons that can never (or must always) match, always-true `instanceof`, type-predicate calls whose argument already has the asserted type. Exempt: ambient globals (`typeof document === "undefined"` probes the environment, not the type) and, without `noUncheckedIndexedAccess`, truthiness checks (index reads erase `undefined`, so the guard may be load-bearing) |
-| `no-coalesce-undefined` | warning | scan | `x ?? undefined` where `x` can be `undefined` but never `null` -- an identity no-op |
-| `redundant-boolean-branch` | warning | scan | `cond ? true : false`, `if (cond) return true; return false;` -- the condition is already boolean. The inverted form is flagged only when the replacement is a readable `!cond`; compound conditions are never rewritten into `!(a && b)` |
-| `no-useless-await` | warning | scan | `await x` where `x`'s type has no `then` -- a no-op that suggests asynchrony that isn't there |
-| `redundant-destructure-default` | warning | scan | `const { a = fallback } = obj` where `obj.a` is required and non-undefined -- the default can never apply |
+| `no-optional-property-access` | warning | finding | `obj?.prop` on a non-nullable type |
+| `no-optional-element-access` | warning | finding | `obj?.[key]` on a non-nullable type |
+| `no-optional-call` | warning | finding | `fn?.()` on a non-nullable type |
+| `no-nullish-coalescing` | warning | finding | `x ?? fallback` on a non-nullable type |
+| `no-logical-or-fallback` | warning | finding | `map.get(k) \|\| fallback`, `count \|\| 1` -- `\|\|` swallows `0` and `""`; use `??` |
+| `no-null-ternary-normalization` | warning | finding | `x == null ? fallback : x` -- a hand-rolled `??`: dead if the type is non-nullable, and a sign the type needs fixing if it isn't |
+| `no-coalesce-then-guard` | warning | finding | `const x = a ?? null; if (x == null)` -- the `if` re-asks the question the `??` just answered |
+| `no-await-coalesce` | warning | smell | `await fn() ?? fallback` -- defaulting away a call's nullable result hides why it can be empty; check it and branch instead (built-in lookups like `Map.get` and `Array.find` are exempt) |
+| `no-non-null-assertion` | warning | finding | `x!` on a nullable type without a local narrowing guard |
+| `no-double-negation-coercion` | warning | finding | `!!value` inside an `if`/`while`/ternary test -- the construct already coerces (`const flag = !!x` and other places that need an actual boolean are fine) |
+| `no-redundant-existence-guard` | warning | finding | `obj && obj.prop` on a non-nullable type |
+| `no-dead-narrowing` | warning | finding | Conditions statically decided by the operand's declared type: truthiness checks that can never fail, `typeof` comparisons that can never (or must always) match, always-true `instanceof`, type-predicate calls whose argument already has the asserted type. Exempt: ambient globals (`typeof document === "undefined"` probes the environment, not the type) and, without `noUncheckedIndexedAccess`, truthiness checks (index reads erase `undefined`, so the guard may be load-bearing) |
+| `no-coalesce-undefined` | warning | finding | `x ?? undefined` where `x` can be `undefined` but never `null` -- an identity no-op |
+| `redundant-boolean-branch` | warning | finding | `cond ? true : false`, `if (cond) return true; return false;` -- the condition is already boolean. The inverted form is flagged only when the replacement is a readable `!cond`; compound conditions are never rewritten into `!(a && b)` |
+| `no-useless-await` | warning | finding | `await x` where `x`'s type has no `then` -- a no-op that suggests asynchrony that isn't there |
+| `redundant-destructure-default` | warning | finding | `const { a = fallback } = obj` where `obj.a` is required and non-undefined -- the default can never apply |
 
 ### Error handling
 
 | Rule | Severity | Tier | What it catches |
 | ---- | -------- | ---- | --------------- |
-| `no-swallowed-catch` | warning | scan | `catch (e) {}`, `.catch(() => fallback)` -- error is neither rethrown, returned, nor passed into a handling call |
-| `no-error-rewrap` | error | scan | `throw new Error(e.message)` without `{ cause: e }` |
+| `no-swallowed-catch` | warning | finding | `catch (e) {}`, `.catch(() => fallback)` -- error is neither rethrown, returned, nor passed into a handling call |
+| `no-error-rewrap` | error | finding | `throw new Error(e.message)` without `{ cause: e }` |
 
 ### Interface design
 
 | Rule | Severity | Tier | What it catches |
 | ---- | -------- | ---- | --------------- |
-| `prefer-type-predicate` | warning | audit | `(x: unknown): boolean` whose body is `typeof`/`instanceof`/`in` checks -- returning `x is T` would let callers narrow |
-| `optional-param-coerced-in-body` | warning | scan | Optional param forced non-optional in the body (`x = x ?? def`, `x ??= def`, or `if (!x) throw`) |
-| `no-defaulted-required-port-arg` | warning | scan | `class C implements I { method(arg = x) }` where `I.method(arg)` is required -- the implementation quietly makes a required argument optional |
-| `repeated-literal-property` | warning | audit | Same literal value repeated across object properties -- likely a missed constant |
-| `repeated-return-shape` | warning | audit | Multiple functions return object literals with the same property names -- extract a shared return type |
-| `trivial-type-alias` | info | audit | `type Foo = Bar;` -- a second name for an existing type with no change (info: an alias marking a domain boundary is often deliberate) |
+| `prefer-type-predicate` | warning | smell | `(x: unknown): boolean` whose body is `typeof`/`instanceof`/`in` checks -- returning `x is T` would let callers narrow |
+| `optional-param-coerced-in-body` | warning | finding | Optional param forced non-optional in the body (`x = x ?? def`, `x ??= def`, or `if (!x) throw`) |
+| `no-defaulted-required-port-arg` | warning | finding | `class C implements I { method(arg = x) }` where `I.method(arg)` is required -- the implementation quietly makes a required argument optional |
+| `repeated-literal-property` | warning | smell | Same literal value repeated across object properties -- likely a missed constant |
+| `repeated-return-shape` | warning | smell | Multiple functions return object literals with the same property names -- extract a shared return type |
+| `trivial-type-alias` | info | smell | `type Foo = Bar;` -- a second name for an existing type with no change (info: an alias marking a domain boundary is often deliberate) |
 
 ### Cross-file analysis
 
 | Rule | Severity | Tier | What it catches |
 | ---- | -------- | ---- | --------------- |
-| `duplicate-type-declaration` | warning | audit | Same type shape in multiple files |
-| `duplicate-type-name` | warning | audit | Same exported type name, different shapes |
-| `duplicate-function-declaration` | warning | audit | Same function body in multiple files |
-| `duplicate-function-name` | warning | audit | Same exported function name, different bodies |
-| `duplicate-constant-declaration` | info | audit | Same constant value in multiple files (info: coincidental value equality is common) |
-| `duplicate-inline-type-in-params` | warning | audit | Same inline `{ ... }` param type repeated across signatures |
-| `duplicate-file` | warning | audit | File with identical content to another file |
-| `near-duplicate-function` | warning | audit | Function bodies that match after renaming params and folding literals (strings, numbers, `null`/`undefined`) -- likely a copy-paste |
-| `duplicate-statement-sequence` | warning | audit | Repeated block of statements across functions or files (identical text; lookup tables that vary only by literal data are not flagged) |
-| `trivial-wrapper` | warning | audit | Function that delegates to another without transformation (skipped when the wrapper specializes a type predicate, introduces generics, reorders args, or partially applies) |
-| `unused-export` | warning | audit | Exported function, type, or constant with no usages in the project. Imports resolve through the checker (path aliases, workspace packages) and usage is merged across tsconfig groups, so an export consumed by a sibling monorepo package counts as used. Consumers outside the scanned tree, such as a published package's API surface, are invisible to the analysis - hence audit tier |
-| `optional-arg-always-used` | warning | audit | Optional param provided at every call site -- make it required |
-| `optional-arg-never-used` | warning | audit | Optional param never provided at any call site -- remove it, inline the default |
-| `constant-argument` | warning | audit | Parameter receives the same literal at every call site -- inline the value |
-| `explicit-null-arg` | warning | audit | `fn(null)` / `fn(undefined)` passed to a project function -- the parameter invites nullish values; redesign it so callers can omit the argument |
-| `dead-overload` | warning | audit | Overload signature with zero matching project call sites |
+| `duplicate-type-declaration` | warning | smell | Same type shape in multiple files |
+| `duplicate-type-name` | warning | smell | Same exported type name, different shapes |
+| `duplicate-function-declaration` | warning | smell | Same function body in multiple files |
+| `duplicate-function-name` | warning | smell | Same exported function name, different bodies |
+| `duplicate-constant-declaration` | info | smell | Same constant value in multiple files (info: coincidental value equality is common) |
+| `duplicate-inline-type-in-params` | warning | smell | Same inline `{ ... }` param type repeated across signatures |
+| `duplicate-file` | warning | smell | File with identical content to another file |
+| `near-duplicate-function` | warning | smell | Function bodies that match after renaming params and folding literals (strings, numbers, `null`/`undefined`) -- likely a copy-paste |
+| `duplicate-statement-sequence` | warning | smell | Repeated block of statements across functions or files (identical text; lookup tables that vary only by literal data are not flagged) |
+| `trivial-wrapper` | warning | smell | Function that delegates to another without transformation (skipped when the wrapper specializes a type predicate, introduces generics, reorders args, or partially applies) |
+| `unused-export` | warning | smell | Exported function, type, or constant with no usages in the project. Imports resolve through the checker (path aliases, workspace packages) and usage is merged across tsconfig groups, so an export consumed by a sibling monorepo package counts as used. Consumers outside the scanned tree, such as a published package's API surface, are invisible to the analysis - hence smell tier |
+| `optional-arg-always-used` | warning | smell | Optional param provided at every call site -- make it required |
+| `optional-arg-never-used` | warning | smell | Optional param never provided at any call site -- remove it, inline the default |
+| `constant-argument` | warning | smell | Parameter receives the same literal at every call site -- inline the value |
+| `explicit-null-arg` | warning | smell | `fn(null)` / `fn(undefined)` passed to a project function -- the parameter invites nullish values; redesign it so callers can omit the argument |
+| `dead-overload` | warning | smell | Overload signature with zero matching project call sites |
 
 ### Imports
 
 | Rule | Severity | Tier | What it catches |
 | ---- | -------- | ---- | --------------- |
-| `no-dynamic-import` | warning | audit | `import("./module")` -- breaks static analysis (warning, not error: code-splitting and lazy loading are legitimate) |
+| `no-dynamic-import` | warning | smell | `import("./module")` -- breaks static analysis (warning, not error: code-splitting and lazy loading are legitimate) |
 
 ## Annotations
 
@@ -369,7 +359,7 @@ import { executeScan, scan } from "unguard";
 const result = await scan({ paths: ["src/"] }); // raw diagnostics
 const execution = await executeScan({
   paths: ["src"],
-  mode: "scan", // or "audit" for the heuristic tier
+  mode: "scan", // or "smell"
   ignore: ["**/*.gen.ts"],
   rulePolicy: {
     "duplicate-*": "warning",
@@ -378,7 +368,6 @@ const execution = await executeScan({
     "prefer-*": "off",
   },
   overrides: [{ files: ["tests/**"], rules: { "no-non-null-assertion": "off" } }],
-  showSeverities: ["error", "warning"],
   failOn: "error",
 });
 

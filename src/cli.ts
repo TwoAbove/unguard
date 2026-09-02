@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import pc from "picocolors";
 import { executeScan, type FailOn, type RulePolicyEntry, type RulePolicySeverity, type Severity } from "./engine.ts";
 import { BASELINE_FILENAME, buildBaseline, loadBaseline, writeBaseline, type BaselineData } from "./scan/baseline.ts";
-import { isFailOn, isRulePolicySeverity, isSeverity, toRulePolicyEntries } from "./scan/config.ts";
+import { isFailOn, isRulePolicySeverity, toRulePolicyEntries } from "./scan/config.ts";
 import { computeExitCode } from "./scan/policy.ts";
 import type { RulePolicy, RuleOverride } from "./scan/types.ts";
 import type { Diagnostic } from "./rules/types.ts";
@@ -15,28 +15,25 @@ interface UnguardConfig {
   rules?: RulePolicy;
   overrides?: RuleOverride[];
   failOn?: FailOn;
-  severity?: Severity[];
   concurrency?: number;
   cache?: boolean;
 }
 
-const COMMANDS = new Set(["scan", "audit", "baseline"]);
+const COMMANDS: Record<string, true> = { scan: true, smell: true, fix: true, baseline: true };
 
 // @unguard unused-export CLI entry point
 export async function main(argv: string[]): Promise<number> {
   const rawArgs = argv.slice(2);
   const first = rawArgs[0];
-  const command = first !== undefined && COMMANDS.has(first) ? first : "scan";
-  const userArgs = first !== undefined && COMMANDS.has(first) ? rawArgs.slice(1) : rawArgs;
+  const isCommand = first !== undefined && Object.hasOwn(COMMANDS, first);
+  const command = isCommand ? first : "scan";
+  const userArgs = isCommand ? rawArgs.slice(1) : rawArgs;
 
   const { values, positionals: cliPaths } = parseArgs({
     args: userArgs,
     options: {
-      strict: { type: "boolean", default: false },
-      filter: { type: "string" },
-      fix: { type: "boolean", default: false },
-      format: { type: "string", default: "grouped" },
-      severity: { type: "string", multiple: true, default: [] },
+      only: { type: "string", multiple: true, default: [] },
+      json: { type: "boolean", default: false },
       ignore: { type: "string", multiple: true, default: [] },
       rule: { type: "string", multiple: true, default: [] },
       config: { type: "string" },
@@ -60,10 +57,6 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  if (values.format !== "grouped" && values.format !== "flat" && values.format !== "json") {
-    console.error(pc.red(`Invalid --format value "${values.format}". Use grouped, flat, or json.`));
-    return 1;
-  }
 
   let config: UnguardConfig | null = null;
   try {
@@ -79,15 +72,9 @@ export async function main(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const severityFiltersResult = parseSeverityFilters(values.severity);
-  if (!severityFiltersResult.ok) {
-    console.error(pc.red(severityFiltersResult.message));
-    return 1;
-  }
-
-  // Only an explicit --fail-on makes audit exit nonzero; config failOn
-  // applies to scan only.
-  const failOnResult = command === "audit"
+  // Only an explicit --fail-on makes smell exit nonzero; config failOn
+  // applies to scan, fix, and baseline only.
+  const failOnResult = command === "smell"
     ? resolveFailOn(values["fail-on"], "none")
     : resolveFailOn(values["fail-on"], "info", config?.failOn);
   if (!failOnResult.ok) {
@@ -113,7 +100,7 @@ export async function main(argv: string[]): Promise<number> {
   // The baseline subcommand regenerates the file, so the existing one must
   // not suppress anything during its scan.
   let baseline: BaselineData | null = null;
-  if (command === "scan" && !values["no-baseline"]) {
+  if ((command === "scan" || command === "fix") && !values["no-baseline"]) {
     try {
       baseline = loadBaseline(process.cwd());
     } catch (err) {
@@ -121,15 +108,15 @@ export async function main(argv: string[]): Promise<number> {
     }
   }
 
+  const mode = command === "smell" ? "smell" : "scan";
+  const noun = mode === "smell" ? "smell" : "finding";
   const execution = await executeScan({
     paths,
-    mode: command === "audit" ? "audit" : "scan",
-    strict: values.strict,
-    rules: values.filter ? [values.filter] : undefined,
+    mode,
+    rules: values.only.length > 0 ? values.only : undefined,
     ignore: ignore.length > 0 ? ignore : undefined,
     rulePolicy: rulePolicy.length > 0 ? rulePolicy : undefined,
     overrides: config?.overrides,
-    showSeverities: severityFiltersResult.value.length > 0 ? severityFiltersResult.value : config?.severity,
     failOn: failOnResult.value,
     concurrency: concurrencyResult.value,
     cache: cacheEnabled,
@@ -140,7 +127,7 @@ export async function main(argv: string[]): Promise<number> {
     const data = buildBaseline(execution.visibleDiagnostics, process.cwd());
     writeBaseline(data, process.cwd());
     console.log(
-      `Baseline written to ${BASELINE_FILENAME}: ${plural(execution.visibleDiagnostics.length, "known issue")} across ${plural(Object.keys(data.rules).length, "file")}.`,
+      `Baseline written to ${BASELINE_FILENAME}: ${plural(execution.visibleDiagnostics.length, "known finding")} across ${plural(Object.keys(data.rules).length, "file")}.`,
     );
     return 0;
   }
@@ -150,7 +137,7 @@ export async function main(argv: string[]): Promise<number> {
   let fixedCount = 0;
   let fixedFileCount = 0;
 
-  if (values.fix) {
+  if (command === "fix") {
     const result = applyFixes(diagnostics);
     fixedCount = result.applied;
     fixedFileCount = result.fileCount;
@@ -158,29 +145,25 @@ export async function main(argv: string[]): Promise<number> {
     exitCode = computeExitCode(diagnostics, failOnResult.value);
   }
 
-  if (values.format === "json") {
-    console.log(JSON.stringify(buildJsonReport(diagnostics, execution.fileCount, exitCode, values.fix ? fixedCount : null), null, 2));
+  if (values.json) {
+    console.log(JSON.stringify(buildJsonReport(diagnostics, execution.fileCount, exitCode, mode, command === "fix" ? fixedCount : null), null, 2));
     return exitCode;
   }
 
   if (baseline !== null) {
     console.log(pc.dim(`Using ${BASELINE_FILENAME} (run "unguard baseline" to regenerate, --no-baseline to ignore)`));
   }
-  if (values.fix && fixedCount > 0) {
-    console.log(pc.green(`Applied ${fixedCount} fix${fixedCount === 1 ? "" : "es"} in ${fixedFileCount} file${fixedFileCount === 1 ? "" : "s"}. Re-run unguard to verify.`));
+  if (command === "fix" && fixedCount > 0) {
+    console.log(pc.green(`Applied ${fixedCount} fix${fixedCount === 1 ? "" : "es"} in ${fixedFileCount} file${fixedFileCount === 1 ? "" : "s"}.`));
   }
 
   if (diagnostics.length === 0) {
-    console.log(pc.green(`No issues found in ${plural(execution.fileCount, "file")}.`));
+    console.log(pc.green(`No ${noun}s in ${plural(execution.fileCount, "file")}.`));
     return exitCode;
   }
 
-  if (values.format === "flat") {
-    printDiagnosticsFlat(diagnostics);
-  } else {
-    printDiagnostics(diagnostics);
-  }
-  printSummary(diagnostics, execution.fileCount);
+  printDiagnostics(diagnostics);
+  printSummary(diagnostics, execution.fileCount, noun);
 
   return exitCode;
 }
@@ -200,19 +183,27 @@ function buildJsonReport(
   diagnostics: Diagnostic[],
   fileCount: number,
   exitCode: number,
+  mode: "scan" | "smell",
   fixedCount: number | null,
-): { diagnostics: JsonDiagnostic[]; fileCount: number; exitCode: number; fixedCount?: number } {
+): {
+  findings?: JsonDiagnostic[];
+  smells?: JsonDiagnostic[];
+  fileCount: number;
+  exitCode: number;
+  fixedCount?: number;
+} {
+  const entries = diagnostics.map((d) => ({
+    file: d.file,
+    line: d.line,
+    column: d.column,
+    severity: d.severity,
+    ruleId: d.ruleId,
+    message: d.message,
+    annotation: d.annotation,
+    fixable: d.fix !== undefined,
+  }));
   return {
-    diagnostics: diagnostics.map((d) => ({
-      file: d.file,
-      line: d.line,
-      column: d.column,
-      severity: d.severity,
-      ruleId: d.ruleId,
-      message: d.message,
-      ...(d.annotation !== undefined ? { annotation: d.annotation } : {}),
-      fixable: d.fix !== undefined,
-    })),
+    [mode === "smell" ? "smells" : "findings"]: entries,
     fileCount,
     exitCode,
     ...(fixedCount !== null ? { fixedCount } : {}),
@@ -276,29 +267,29 @@ function printHelp() {
 
 Usage:
   unguard scan [paths...] [options]
-  unguard audit [paths...] [options]
+  unguard smell [paths...] [options]
+  unguard fix [paths...] [options]
   unguard baseline [paths...] [options]
   unguard [paths...] [options]
 
 Commands:
-  scan                  Run proven rules: every finding demands a fix (default)
-  audit                 Run heuristic rules: findings surface for review, exit
-                        code is 0 unless --fail-on is passed explicitly
-  baseline              Record current issues in unguard.baseline.json; later
+  scan                  Report findings demonstrated by the checker or graph (default)
+  smell                 Report smells that need a human decision; exit code is 0
+                        unless --fail-on is passed explicitly
+  fix                   Apply available fixes, then report remaining findings
+  baseline              Record current findings in unguard.baseline.json; later
                         scans suppress a (file, rule) group until its count
                         grows past the recorded number
 
 Options:
-  --config <path>       Path to unguard config file (defaults to ./unguard.config.json)
-  --strict              Treat all diagnostics as errors
-  --filter <rule>       Run only the specified rule (in either command)
-  --fix                 Apply available auto-fixes, then report what remains
-  --rule <sel=sev>      Override rule severity (supports id, *, category:<name>,
-                        tag:<name>, confidence:<proven|heuristic>)
+  --only <selector>     Run rules matching a selector. Repeatable.
+  --rule <sel=sev>      Override rule severity. Repeatable.
+                        Selectors: id, *, category:<name>, tag:<name>,
+                        tier:<finding|smell>
   --ignore <glob>       Ignore path glob. Repeatable.
-  --severity <levels>   Filter output by severity (comma-separated and/or repeatable)
+  --json                Print machine-readable JSON
   --fail-on <level>     Exit threshold: none, error, warning, info (default: info)
-  --format <mode>       Output format: grouped (default), flat, or json
+  --config <path>       Path to unguard config file (defaults to ./unguard.config.json)
   --concurrency <n>     Worker threads for tsconfig groups (default: auto, 1 disables)
   --no-baseline         Ignore unguard.baseline.json for this scan
   --no-cache            Disable on-disk diagnostic cache (node_modules/.cache/unguard)
@@ -312,15 +303,12 @@ Exit codes:
 
 Examples:
   unguard scan src
-  unguard audit src
-  unguard scan src --fix
-  unguard scan src --format=json
-  unguard baseline src
-  unguard scan src --rule duplicate-*=warning
-  unguard scan src --rule category:cross-file=warning
-  unguard scan src --rule tag:safety=error
-  unguard scan src --severity=error,warning
-  unguard scan src --fail-on=error`);
+  unguard smell src
+  unguard fix src
+  unguard scan --only no-any-cast
+  unguard scan --only tier:finding --rule duplicate-*=warning
+  unguard scan --json
+  unguard baseline src`);
 }
 
 function printDiagnostics(diagnostics: Diagnostic[]) {
@@ -390,18 +378,8 @@ function wrapWords(text: string, width: number): string[] {
   return lines;
 }
 
-function printDiagnosticsFlat(diagnostics: Diagnostic[]) {
-  const cwdBase = process.cwd();
-  const cwd = `${cwdBase}/`;
 
-  for (const diagnostic of diagnostics) {
-    const rel = relative(cwdBase, diagnostic.file);
-    const msg = diagnostic.message.replaceAll(cwd, "");
-    console.log(`${rel}:${diagnostic.line}:${diagnostic.column} ${diagnostic.severity} [${diagnostic.ruleId}] ${msg}`);
-  }
-}
-
-function printSummary(diagnostics: Diagnostic[], fileCount: number) {
+function printSummary(diagnostics: Diagnostic[], fileCount: number, noun: "finding" | "smell") {
   const counts = new Map<string, number>();
   for (const diagnostic of diagnostics) {
     const prev = counts.get(diagnostic.ruleId);
@@ -416,26 +394,13 @@ function printSummary(diagnostics: Diagnostic[], fileCount: number) {
     console.log(`  ${rule.padEnd(maxRule)}  ${pc.bold(String(count))}`);
   }
 
-  console.log(
-    `\n${pc.bold(String(diagnostics.length))} issue${diagnostics.length === 1 ? "" : "s"} in ${plural(fileCount, "file")}.`,
-  );
+  console.log(`\n${pc.bold(String(diagnostics.length))} ${noun}${diagnostics.length === 1 ? "" : "s"} in ${plural(fileCount, "file")}.`);
 }
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-function parseSeverityFilters(values: string[]): { ok: true; value: Severity[] } | { ok: false; message: string } {
-  const levels = splitCsv(values);
-  const parsed: Severity[] = [];
-  for (const value of levels) {
-    if (!isSeverity(value)) {
-      return { ok: false, message: `Invalid --severity value "${value}". Use error, warning, info.` };
-    }
-    parsed.push(value);
-  }
-  return { ok: true, value: parsed };
-}
 
 function parseRulePolicyArgs(values: string[]): { ok: true; value: RulePolicyEntry[] } | { ok: false; message: string } {
   const entries: RulePolicyEntry[] = [];
@@ -469,12 +434,6 @@ function resolveRuleSeparator(value: string): number | null {
   return colonIndex;
 }
 
-function splitCsv(values: string[]): string[] {
-  return values
-    .flatMap((value) => value.split(","))
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-}
 
 function findConfigPath(cliValue: string | undefined): string | null {
   if (cliValue) {
@@ -525,12 +484,6 @@ function loadConfig(path: string): UnguardConfig {
     config.failOn = raw.failOn;
   }
 
-  if (raw.severity !== undefined) {
-    if (!isStringArray(raw.severity) || !raw.severity.every(isSeverity)) {
-      throw new Error(`Invalid config in ${basename(path)}: "severity" must be an array of error, warning, info.`);
-    }
-    config.severity = raw.severity;
-  }
 
   if (raw.concurrency !== undefined) {
     if (typeof raw.concurrency !== "number" || !Number.isInteger(raw.concurrency) || raw.concurrency < 1) {

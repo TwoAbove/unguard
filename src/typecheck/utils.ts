@@ -88,6 +88,13 @@ export function includesNumberType(type: ts.Type): boolean {
   return hasFlags(type.flags, ts.TypeFlags.NumberLike);
 }
 
+export function includesUndefined(type: ts.Type): boolean {
+  if (type.isUnion()) {
+    return type.types.some((t) => hasFlags(t.flags, ts.TypeFlags.Undefined));
+  }
+  return hasFlags(type.flags, ts.TypeFlags.Undefined);
+}
+
 export function includesBooleanType(type: ts.Type): boolean {
   if (type.isUnion()) {
     return type.types.some((t) => hasFlags(t.flags, ts.TypeFlags.BooleanLike));

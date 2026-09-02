@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Diagnostic, Rule } from "../rules/types.ts";
-import type { Severity } from "./types.ts";
 
 const CACHE_VERSION = 1;
 const CACHE_FILENAME = "scan-cache.json";
@@ -23,9 +22,7 @@ export interface ScanKeyInput {
   rules: readonly Rule[];
   paths: readonly string[];
   ignore: readonly string[];
-  strict: boolean;
   failOn: string;
-  showSeverities: ReadonlySet<Severity> | null;
 }
 
 export interface CacheCheckContext {
@@ -55,9 +52,7 @@ export function computeScanKey(input: ScanKeyInput): string {
     ruleSig,
     paths: [...input.paths].sort(),
     ignore: [...input.ignore].sort(),
-    strict: input.strict,
     failOn: input.failOn,
-    showSeverities: input.showSeverities ? [...input.showSeverities].sort() : null,
   });
   return createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }

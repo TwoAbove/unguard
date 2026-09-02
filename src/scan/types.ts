@@ -1,5 +1,5 @@
 import type { Diagnostic, Rule } from "../rules/types.ts";
-import type { RuleCategory, RuleConfidence } from "../rules/index.ts";
+import type { RuleCategory, RuleTier } from "../rules/index.ts";
 import type { BaselineData } from "./baseline.ts";
 
 export type Severity = Diagnostic["severity"];
@@ -7,11 +7,11 @@ export type RulePolicySeverity = Severity | "off";
 export type FailOn = "none" | Severity;
 
 /**
- * `scan` runs proven rules — every finding demands a fix. `audit` runs
- * heuristic rules — findings are review prompts. An explicit `rules` filter
- * bypasses the split: asking for a rule by name runs it in either mode.
+ * `scan` runs finding-tier rules, whose reports demand a fix. `smell` runs
+ * smell-tier rules, whose reports need a human decision. Explicit `rules`
+ * selectors bypass the split and run matching rules in either mode.
  */
-export type ScanMode = "scan" | "audit";
+export type ScanMode = "scan" | "smell";
 
 export interface RulePolicyEntry {
   selector: string;
@@ -29,13 +29,12 @@ export interface RuleOverride {
 export interface ScanOptions {
   paths: string[];
   mode?: ScanMode;
-  strict?: boolean;
+  /** Rule selectors to run, bypassing the mode's tier split. */
   rules?: string[];
   ignore?: string[];
   rulePolicy?: RulePolicy;
   /** Path-scoped rule policies, applied after the global policy. */
   overrides?: RuleOverride[];
-  showSeverities?: Severity[];
   failOn?: FailOn;
   useGitIgnore?: boolean;
   /** Worker threads for tsconfig groups. Auto by default; 1 disables. */
@@ -54,12 +53,10 @@ export interface ResolvedRuleOverride {
 export interface ResolvedScanConfig {
   paths: string[];
   mode: ScanMode;
-  strict: boolean;
   rules: string[] | null;
   ignore: string[];
   rulePolicy: RulePolicyEntry[];
   overrides: ResolvedRuleOverride[];
-  showSeverities: Set<Severity> | null;
   failOn: FailOn;
   useGitIgnore: boolean;
   concurrency: number | undefined;
@@ -71,7 +68,7 @@ export interface RuleDescriptor {
   rule: Rule;
   category: RuleCategory;
   tags: string[];
-  confidence: RuleConfidence;
+  tier: RuleTier;
 }
 
 export interface ScanResult {
