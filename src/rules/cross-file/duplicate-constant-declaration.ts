@@ -1,5 +1,5 @@
-import type { ConstantEntry } from "../../collect/constant-registry.ts";
-import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
+import type { ConstantFact } from "../../graph/types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup } from "../types.ts";
 
 /**
  * Iffy by this project's own standard: `hasNameOverlap` gates on identifier
@@ -12,15 +12,20 @@ export const duplicateConstantDeclaration: CrossFileRule = {
   id: "duplicate-constant-declaration",
   severity: "info",
   message: "Identical constant value declared in multiple files; consolidate to a single definition",
-  requires: ["constants"],
+  requiresTypeInfo: false,
 
-  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
+  analyze(graph, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
-    for (const group of project.constants.getDuplicateGroups()) {
-      const files = new Set(group.map((e) => e.file));
-      if (files.size < 2) continue;
+    for (const group of graph.duplicateGroups("constant")) {
+      if (new Set(group.map((entry) => entry.site.file)).size < 2) continue;
       if (!hasNameOverlap(group)) continue;
-      reportDuplicateGroup(group, this.id, this.severity,
+      const entries = group.map((entry) => ({
+        ...entry,
+        file: entry.site.file,
+        line: entry.site.line,
+        column: entry.site.column,
+      }));
+      reportDuplicateGroup(entries, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Constant "${e.name}" has identical value \`${e.valueText}\` to: ${others}`,
         diagnostics,
@@ -31,7 +36,7 @@ export const duplicateConstantDeclaration: CrossFileRule = {
 };
 
 /** Check whether any two constants in the group share a name segment. */
-function hasNameOverlap(group: ConstantEntry[]): boolean {
+function hasNameOverlap(group: readonly ConstantFact[]): boolean {
   const segmentSets = group.map((e) => nameSegments(e.name));
   for (let i = 0; i < segmentSets.length; i++) {
     const left = segmentSets[i];

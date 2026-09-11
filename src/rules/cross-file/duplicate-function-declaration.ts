@@ -1,21 +1,24 @@
-import * as ts from "typescript";
-import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, type ProjectIndex, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup } from "../types.ts";
 
 export const duplicateFunctionDeclaration: CrossFileRule = {
   id: "duplicate-function-declaration",
   severity: "warning",
   message: "Identical function body declared in multiple files; consolidate to a single definition",
-  requires: ["functions"],
+  requiresTypeInfo: false,
 
-  analyze(project: ProjectIndex, context: CrossFileAnalysisContext = {}): Diagnostic[] {
+  analyze(graph, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
-    for (const group of project.functions.getDuplicateGroups()) {
+    for (const group of graph.duplicateGroups("function")) {
       const first = group[0];
-      if (first === undefined) continue;
-      if (isSingleStatement(first.node)) continue;
-      if (isSetter(first.node)) continue;
+      if (first === undefined || first.statementCount <= 1 || first.isAssignmentOnly) continue;
+      const entries = group.map((entry) => ({
+        ...entry,
+        file: entry.site.file,
+        line: entry.site.line,
+        column: entry.site.column,
+      }));
 
-      reportDuplicateGroup(group, this.id, this.severity,
+      reportDuplicateGroup(entries, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Function "${e.name}" has identical body to: ${others}`,
         diagnostics,
@@ -24,25 +27,3 @@ export const duplicateFunctionDeclaration: CrossFileRule = {
     return diagnostics;
   },
 };
-
-function getBodyBlock(node: ts.Node): ts.Block | undefined {
-  if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) return node.body;
-  if (ts.isArrowFunction(node)) return ts.isBlock(node.body) ? node.body : undefined;
-  if (ts.isMethodDeclaration(node)) return node.body;
-  return undefined;
-}
-
-function isSingleStatement(node: ts.Node): boolean {
-  if (ts.isArrowFunction(node) && !ts.isBlock(node.body)) return true;
-  const body = getBodyBlock(node);
-  return body !== undefined && body.statements.length <= 1;
-}
-
-function isSetter(node: ts.Node): boolean {
-  const body = getBodyBlock(node);
-  if (!body || body.statements.length !== 1) return false;
-  const stmt = body.statements[0];
-  if (stmt === undefined || !ts.isExpressionStatement(stmt)) return false;
-  return ts.isBinaryExpression(stmt.expression) &&
-    stmt.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken;
-}

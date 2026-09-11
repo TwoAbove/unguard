@@ -1,6 +1,6 @@
 import { parentPort } from "node:worker_threads";
 import { allRules } from "../rules/index.ts";
-import { isTSRule, type CrossFileRule, type ProjectIndexNeed, type Rule } from "../rules/types.ts";
+import { isTSRule, type CrossFileRule, type Rule } from "../rules/types.ts";
 import { analyzeGroup } from "./analyze.ts";
 import type { WorkerRequest, WorkerResponse, RuleSpec } from "./worker-pool.ts";
 
@@ -16,8 +16,7 @@ port.on("message", (req: WorkerRequest) => {
     const rules = resolveRules(req.ruleSpecs);
     const tsRules = rules.filter(isTSRule);
     const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
-    const indexNeeds: ReadonlySet<ProjectIndexNeed> = new Set(req.indexNeeds);
-    const result = analyzeGroup(req.groupConfig, tsRules, crossFileRules, indexNeeds);
+    const result = analyzeGroup(req.groupConfig, tsRules, crossFileRules);
     const response: WorkerResponse = {
       taskId: req.taskId,
       ok: true,

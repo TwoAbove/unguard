@@ -18,6 +18,8 @@ export type {
   ScanResult,
   Severity,
 } from "./scan/types.ts";
+export * from "./graph/types.ts";
+export { buildGraph, buildSourceOnlyGraph } from "./graph/graph.ts";
 
 const UNGUARD_VERSION: string = createRequire(import.meta.url)("../package.json").version;
 

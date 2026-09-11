@@ -1,5 +1,5 @@
-import type { CrossFileAnalysisContext, CrossFileRule, Diagnostic, ProjectIndex } from "../types.ts";
-import type { PresenceIndex, PresenceSite } from "../../collect/presence.ts";
+import type { Graph, PresenceFacts, PresenceSite } from "../../graph/types.ts";
+import type { CrossFileAnalysisContext, CrossFileRule, Diagnostic } from "../types.ts";
 
 /**
  * `...(x === undefined ? {} : { x })` distinguishes an absent key from an
@@ -18,19 +18,18 @@ export const redundantConditionalSpread: CrossFileRule = {
   id: "redundant-conditional-spread",
   severity: "warning",
   message: "conditional spread guards key presence that nothing in the project observes; write the property directly",
-  requires: ["presence"],
 
-  collectGlobalFacts(project: ProjectIndex, context?: CrossFileAnalysisContext): PresenceFacts {
-    return extractFacts(project.presence, context);
+  collectGlobalFacts(graph: Graph, context: CrossFileAnalysisContext = {}): SerializedPresenceFacts {
+    return extractFacts(graph.presence(), context);
   },
 
   finalizeGlobal(facts: unknown[]): Diagnostic[] {
-    return finalize(facts as PresenceFacts[], this.severity);
+    return finalize(facts as SerializedPresenceFacts[], this.severity);
   },
 
-  analyze(project: ProjectIndex, context?: CrossFileAnalysisContext): Diagnostic[] {
+  analyze(graph: Graph, context: CrossFileAnalysisContext = {}): Diagnostic[] {
     // Single-group view: the merge pipeline with exactly one group's facts.
-    return finalize([extractFacts(project.presence, context)], this.severity);
+    return finalize([extractFacts(graph.presence(), context)], this.severity);
   },
 };
 
@@ -39,7 +38,7 @@ interface SiteFact extends PresenceSite {
 }
 
 /** structuredClone-safe projection of one group's presence index. */
-interface PresenceFacts {
+interface SerializedPresenceFacts {
   sites: SiteFact[];
   /** typeId -> keys observed on it ("*" = all keys) */
   observed: [string, string[]][];
@@ -47,9 +46,8 @@ interface PresenceFacts {
   edges: [string, string[]][];
 }
 
-function extractFacts(presence: PresenceIndex, context?: CrossFileAnalysisContext): PresenceFacts {
-  let reportableFiles: ReadonlySet<string> | undefined;
-  if (context !== undefined) reportableFiles = context.reportableFiles;
+function extractFacts(presence: PresenceFacts, context: CrossFileAnalysisContext): SerializedPresenceFacts {
+  const reportableFiles = context.reportableFiles;
   return {
     sites: presence.sites.map((site) => ({
       ...site,
@@ -60,7 +58,7 @@ function extractFacts(presence: PresenceIndex, context?: CrossFileAnalysisContex
   };
 }
 
-function finalize(factsList: PresenceFacts[], severity: Diagnostic["severity"]): Diagnostic[] {
+function finalize(factsList: SerializedPresenceFacts[], severity: Diagnostic["severity"]): Diagnostic[] {
   const observed = new Map<string, Set<string>>();
   const edges = new Map<string, Set<string>>();
   for (const facts of factsList) {

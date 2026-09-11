@@ -1,9 +1,12 @@
 import { readFileSync } from "node:fs";
 import * as ts from "typescript";
-import { collectAllComments, collectProject, collectSourceText, createProjectIndex, type CommentInfo, type ProjectIndexNeeds } from "../collect/index.ts";
+import { buildGraph, buildSourceOnlyGraph } from "../graph/graph.ts";
+import type { Graph } from "../graph/types.ts";
 import { isTSRule } from "../rules/types.ts";
-import type { CrossFileRule, Diagnostic, ProjectIndexNeed, Rule, TSRule } from "../rules/types.ts";
+import type { CrossFileRule, Diagnostic, Rule, TSRule } from "../rules/types.ts";
+import { collectAllComments, type CommentInfo } from "../typecheck/comments.ts";
 import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup, createProgramBuildCache, expandProjectFiles, type ProgramGroupConfig } from "../typecheck/program.ts";
+import { runTSRules, runTSRulesOnSource } from "../typecheck/walk.ts";
 import { runGroupsInWorkers, workersAvailable, type GroupTask } from "./worker-pool.ts";
 
 export interface AnalyzeOptions {
@@ -14,10 +17,8 @@ export interface AnalyzeOptions {
 export async function analyzeFiles(files: string[], rules: Rule[], options: AnalyzeOptions): Promise<Diagnostic[]> {
   const tsRules = rules.filter(isTSRule);
   const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
-  const indexNeeds = collectIndexNeeds(crossFileRules);
-
-  if (!requiresProgram(tsRules, indexNeeds)) {
-    return analyzeSourceOnlyFiles(files, tsRules, crossFileRules, indexNeeds);
+  if (!requiresProgram(tsRules, crossFileRules)) {
+    return analyzeSourceOnlyFiles(files, tsRules, crossFileRules);
   }
 
   const groupConfigs = mergeCompatibleGroups(groupFilesByTsconfig(files));
@@ -25,10 +26,10 @@ export async function analyzeFiles(files: string[], rules: Rule[], options: Anal
 
   const concurrency = resolveConcurrency(options.concurrency, groupConfigs.length);
   if (concurrency > 1 && groupConfigs.length > 1 && workersAvailable()) {
-    return await runGroupsViaWorkers(groupConfigs, rules, indexNeeds, concurrency);
+    return await runGroupsViaWorkers(groupConfigs, rules, concurrency);
   }
 
-  return runGroupsSerial(groupConfigs, tsRules, crossFileRules, indexNeeds);
+  return runGroupsSerial(groupConfigs, tsRules, crossFileRules);
 }
 
 /** A cross-file rule that merges facts across tsconfig groups before judging. */
@@ -51,14 +52,13 @@ function runGroupsSerial(
   groupConfigs: ProgramGroupConfig[],
   tsRules: TSRule[],
   crossFileRules: CrossFileRule[],
-  indexNeeds: ProjectIndexNeeds,
 ): Diagnostic[] {
   const programCache = createProgramBuildCache();
   const allDiagnostics: Diagnostic[] = [];
   const factsByRule = new Map<string, unknown[]>();
 
   for (const groupConfig of groupConfigs) {
-    const result = analyzeGroup(groupConfig, tsRules, crossFileRules, indexNeeds, programCache);
+    const result = analyzeGroup(groupConfig, tsRules, crossFileRules, programCache);
     allDiagnostics.push(...result.diagnostics);
     addGroupFacts(factsByRule, result.globalFacts);
   }
@@ -70,13 +70,12 @@ function runGroupsSerial(
 async function runGroupsViaWorkers(
   groupConfigs: ProgramGroupConfig[],
   rules: Rule[],
-  indexNeeds: ProjectIndexNeeds,
   concurrency: number,
 ): Promise<Diagnostic[]> {
   const ruleSpecs = rules.map((rule) => ({ id: rule.id, severity: rule.severity }));
   const tasks: GroupTask[] = groupConfigs.map((groupConfig, idx) => ({ id: idx, groupConfig }));
 
-  const resultsByTask = await runGroupsInWorkers(tasks, ruleSpecs, [...indexNeeds], concurrency);
+  const resultsByTask = await runGroupsInWorkers(tasks, ruleSpecs, concurrency);
   const allDiagnostics: Diagnostic[] = [];
   const factsByRule = new Map<string, unknown[]>();
   for (const result of resultsByTask) {
@@ -137,32 +136,27 @@ export function analyzeGroup(
   groupConfig: ProgramGroupConfig,
   tsRules: TSRule[],
   crossFileRules: CrossFileRule[],
-  indexNeeds: ProjectIndexNeeds,
   programCache?: ReturnType<typeof createProgramBuildCache>,
 ): GroupAnalysisResult {
-  const projectIndex = createProjectIndex();
   const program = createProgramForGroup(groupConfig, { expandProjectFiles: true, cache: programCache });
   const allowed = new Set(groupConfig.scanFiles);
-  const collectFiles = indexNeeds.size > 0
+  const collectFiles = crossFileRules.length > 0
     ? new Set(expandProjectFiles(groupConfig).filter(isAnalyzableSourcePath))
     : new Set<string>();
   const runnableTsRules = filterRulesForCompilerOptions(tsRules, program.getCompilerOptions());
-  const { diagnostics } = collectProject(program, runnableTsRules, allowed, {
-    collectFiles,
-    needs: indexNeeds,
-    index: projectIndex,
-  });
+  const diagnostics = runTSRules(program, runnableTsRules, allowed);
+  const graph = buildGraph(program, { files: collectFiles });
 
   const groupDiagnostics: Diagnostic[] = [...diagnostics];
-  groupDiagnostics.push(...runCrossFileRules(crossFileRules.filter((r) => !isGlobalRule(r)), projectIndex, allowed));
+  groupDiagnostics.push(...runCrossFileRules(crossFileRules.filter((r) => !isGlobalRule(r)), graph, allowed));
 
   const globalFacts: Record<string, unknown> = {};
   for (const rule of crossFileRules.filter(isGlobalRule)) {
-    globalFacts[rule.id] = rule.collectGlobalFacts(projectIndex, { reportableFiles: allowed });
+    globalFacts[rule.id] = rule.collectGlobalFacts(graph, { reportableFiles: allowed });
   }
 
   const fileData = new Map<string, FileDiagnosticData>();
-  addFileData(fileData, projectIndex, allowed);
+  addFileData(fileData, program, allowed);
 
   return { diagnostics: finalizeDiagnostics(groupDiagnostics, fileData), globalFacts };
 }
@@ -188,7 +182,6 @@ function analyzeSourceOnlyFiles(
   files: string[],
   tsRules: TSRule[],
   crossFileRules: CrossFileRule[],
-  indexNeeds: ProjectIndexNeeds,
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const allFiles = new Map<string, FileDiagnosticData>();
@@ -196,26 +189,26 @@ function analyzeSourceOnlyFiles(
 
   const groupConfigs = mergeCompatibleGroups(groupFilesByTsconfig(files));
   for (const groupConfig of groupConfigs) {
-    const projectIndex = createProjectIndex();
     const allowed = new Set(groupConfig.scanFiles.filter(isAnalyzableSourcePath));
-    const collectFiles = (indexNeeds.size > 0 ? expandProjectFiles(groupConfig) : groupConfig.scanFiles)
+    const collectFiles = (crossFileRules.length > 0 ? expandProjectFiles(groupConfig) : groupConfig.scanFiles)
       .filter(isAnalyzableSourcePath);
+    const sourceFiles: ts.SourceFile[] = [];
 
     for (const file of collectFiles) {
       const source = readFileSync(file, "utf8");
-      const result = collectSourceText(file, source, allowed.has(file) ? tsRules : [], {
-        index: projectIndex,
-        needs: indexNeeds,
-        retainFile: allowed.has(file) || indexNeeds.has("files"),
-      });
+      const result = runTSRulesOnSource(file, source, allowed.has(file) ? tsRules : []);
       diagnostics.push(...result.diagnostics);
+      sourceFiles.push(result.sourceFile);
+      if (allowed.has(file)) {
+        allFiles.set(file, { source, sourceFile: result.sourceFile });
+      }
     }
 
-    diagnostics.push(...runCrossFileRules(crossFileRules.filter((r) => !isGlobalRule(r)), projectIndex, allowed));
+    const graph = buildSourceOnlyGraph(sourceFiles);
+    diagnostics.push(...runCrossFileRules(crossFileRules.filter((r) => !isGlobalRule(r)), graph, allowed));
     for (const rule of crossFileRules.filter(isGlobalRule)) {
-      addGroupFacts(factsByRule, { [rule.id]: rule.collectGlobalFacts(projectIndex, { reportableFiles: allowed }) });
+      addGroupFacts(factsByRule, { [rule.id]: rule.collectGlobalFacts(graph, { reportableFiles: allowed }) });
     }
-    addFileData(allFiles, projectIndex, allowed);
   }
 
   // Merged diagnostics point at allowed files, whose data `allFiles` already
@@ -227,13 +220,13 @@ function analyzeSourceOnlyFiles(
 
 function runCrossFileRules(
   rules: CrossFileRule[],
-  projectIndex: ReturnType<typeof createProjectIndex>,
+  graph: Graph,
   allowed: Set<string>,
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const crossFileContext = { reportableFiles: allowed };
   for (const rule of rules) {
-    const ruleDiags = rule.analyze(projectIndex, crossFileContext);
+    const ruleDiags = rule.analyze(graph, crossFileContext);
     diagnostics.push(...ruleDiags.filter((d) => allowed.has(d.file)));
   }
   return diagnostics;
@@ -241,12 +234,13 @@ function runCrossFileRules(
 
 function addFileData(
   files: Map<string, FileDiagnosticData>,
-  projectIndex: ReturnType<typeof createProjectIndex>,
+  program: ts.Program,
   allowed: Set<string>,
 ): void {
-  for (const [k, v] of projectIndex.files) {
-    if (!allowed.has(k)) continue;
-    files.set(k, { source: v.source, sourceFile: v.sourceFile });
+  for (const file of allowed) {
+    const sourceFile = program.getSourceFile(file);
+    if (sourceFile === undefined) continue;
+    files.set(file, { source: sourceFile.getFullText(), sourceFile });
   }
 }
 
@@ -256,25 +250,9 @@ function isAnalyzableSourcePath(file: string): boolean {
   return !/\.d\.[cm]?ts$/i.test(normalized);
 }
 
-function requiresProgram(tsRules: TSRule[], indexNeeds: ProjectIndexNeeds): boolean {
-  if (tsRules.some((rule) => rule.requiresTypeInfo !== false)) return true;
-  return indexNeeds.has("functionSymbols")
-    || indexNeeds.has("callSiteSymbols")
-    || indexNeeds.has("overloadCallSignatures")
-    || indexNeeds.has("presence");
-}
-
-function collectIndexNeeds(rules: CrossFileRule[]): ProjectIndexNeeds {
-  const needs = new Set<ProjectIndexNeed>();
-  for (const rule of rules) {
-    for (const need of rule.requires ?? []) {
-      needs.add(need);
-    }
-  }
-  if (needs.has("functionSymbols")) needs.add("functions");
-  if (needs.has("callSiteSymbols") || needs.has("overloadCallSignatures")) needs.add("callSites");
-  if (needs.has("overloadCallSignatures")) needs.add("callSiteSymbols");
-  return needs;
+function requiresProgram(tsRules: TSRule[], crossFileRules: CrossFileRule[]): boolean {
+  return tsRules.some((rule) => rule.requiresTypeInfo !== false)
+    || crossFileRules.some((rule) => rule.requiresTypeInfo !== false);
 }
 
 function dedupeDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {

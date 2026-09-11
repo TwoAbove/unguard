@@ -34,4 +34,12 @@ describe("unused-export", () => {
   it("resolves tsconfig path-alias imports through the checker", () => {
     assertCrossFileValid(unusedExport, new URL("./valid-alias-import", import.meta.url).pathname);
   });
+
+  it("keeps a locally called exported overload live without hiding an unused sibling", () => {
+    assertCrossFileInvalid(unusedExport, new URL("./local-overload", import.meta.url).pathname);
+  });
+
+  it("keeps a dynamically imported property call live without hiding an unused sibling", () => {
+    assertCrossFileInvalid(unusedExport, new URL("./dynamic-import", import.meta.url).pathname);
+  });
 });

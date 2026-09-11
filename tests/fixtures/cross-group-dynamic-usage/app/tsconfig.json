@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": false,
+    "target": "ESNext",
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}

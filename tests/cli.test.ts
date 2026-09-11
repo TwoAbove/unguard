@@ -9,6 +9,31 @@ afterEach(() => {
 });
 
 describe("cli", () => {
+  it("graph includes callers and importers from the target's project", async () => {
+    const output: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((message) => output.push(String(message)));
+    const tmp = mkdtempSync(join(tmpdir(), "unguard-graph-"));
+    const library = join(tmp, "library.ts");
+    const consumer = join(tmp, "consumer.ts");
+
+    try {
+      writeFileSync(join(tmp, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", moduleResolution: "NodeNext" },
+        include: ["*.ts"],
+      }));
+      writeFileSync(library, "export function target(value: string) { return value; }\n");
+      writeFileSync(consumer, 'import { target } from "./library.js";\ntarget("used");\n');
+
+      const code = await main(["node", "unguard", "graph", `${library}:1`]);
+      const sections = output.join("\n").split("\n\n");
+      expect(code).toBe(0);
+      expect(sections.find((section) => section.startsWith("callers\n"))).toContain(`${consumer}:2:1`);
+      expect(sections.find((section) => section.startsWith("importers\n"))).toContain(`${consumer}:1`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("--only is repeatable", async () => {
     const output: string[] = [];
     vi.spyOn(console, "log").mockImplementation((message) => output.push(String(message)));

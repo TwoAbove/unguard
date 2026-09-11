@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
-import type { Diagnostic, ProjectIndexNeed } from "../rules/types.ts";
+import type { Diagnostic } from "../rules/types.ts";
 import type { ProgramGroupConfig } from "../typecheck/program.ts";
 import type { GroupAnalysisResult } from "./analyze.ts";
 import type { RulePolicySeverity } from "./types.ts";
@@ -20,7 +20,6 @@ export interface WorkerRequest {
   taskId: number;
   groupConfig: ProgramGroupConfig;
   ruleSpecs: RuleSpec[];
-  indexNeeds: ProjectIndexNeed[];
 }
 
 export type WorkerResponse =
@@ -37,7 +36,6 @@ export function workersAvailable(): boolean {
 export async function runGroupsInWorkers(
   tasks: GroupTask[],
   ruleSpecs: RuleSpec[],
-  indexNeeds: ProjectIndexNeed[],
   concurrency: number,
 ): Promise<GroupAnalysisResult[]> {
   if (tasks.length === 0) return [];
@@ -72,7 +70,6 @@ export async function runGroupsInWorkers(
         taskId: task.id,
         groupConfig: task.groupConfig,
         ruleSpecs,
-        indexNeeds,
       };
       worker.postMessage(req);
     }

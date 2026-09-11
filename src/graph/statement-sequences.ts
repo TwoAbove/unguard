@@ -1,3 +1,5 @@
+import type { MaximalMatch, MaximalMatchParticipant } from "./types.ts";
+
 /**
  * Detect maximal duplicated runs of consecutive statements across all collected
  * blocks. "Maximal" means the run can't be extended in either direction without
@@ -31,21 +33,12 @@ export interface StatementInBlock {
   normalizedLength: number;
 }
 
-export interface MaximalMatchParticipant {
+/** One block's statements, as the declarations family collects them. */
+export interface StatementBlock {
   file: string;
-  line: number;
-  column: number;
-  endLine: number;
-  /** Number of statements in this match (same for every participant). */
-  statementCount: number;
+  statements: StatementInBlock[];
 }
 
-export interface MaximalMatch {
-  participants: MaximalMatchParticipant[];
-  statementCount: number;
-  /** Sum of per-statement normalized text lengths across the matched run. */
-  normalizedBodyLength: number;
-}
 
 interface PositionRef {
   block: BlockData;
@@ -62,7 +55,17 @@ interface RecordedMatch {
   length: number;
 }
 
-export class StatementSequenceRegistry {
+export function findMaximalMatches(
+  blocks: readonly StatementBlock[],
+  minStatementCount: number,
+  minNormalizedBodyLength: number,
+): MaximalMatch[] {
+  const registry = new StatementSequenceRegistry();
+  for (const block of blocks) registry.addBlock(block.file, block.statements);
+  return registry.getMaximalMatches(minStatementCount, minNormalizedBodyLength);
+}
+
+class StatementSequenceRegistry {
   private blocks: BlockData[] = [];
   private byHash = new Map<string, PositionRef[]>();
 

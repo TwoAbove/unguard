@@ -1,6 +1,8 @@
 import * as ts from "typescript";
 import type { SemanticServices } from "../rules/types.ts";
 import { includesUndefined, isFromNodeModules } from "../typecheck/utils.ts";
+import { nodeId, type GraphInput } from "./graph.ts";
+import type { PresenceFacts } from "./types.ts";
 
 /**
  * Demand-side presence analysis.
@@ -26,37 +28,31 @@ import { includesUndefined, isFromNodeModules } from "../typecheck/utils.ts";
  * silence is conservative, a finding is a certificate.
  */
 
-export interface PresenceSite {
-  file: string;
-  line: number;
-  column: number;
-  /** property name whose presence the ternary controls */
-  key: string;
-  /** identities of the contextual target type (union/intersection expanded) */
-  typeIds: string[];
-  /** display name for diagnostics only, never identity */
-  typeName: string;
+/** Walk every project file once and collect the presence facts. Requires the checker. */
+export function buildPresence(input: GraphInput): PresenceFacts {
+  const { semantics, compilerOptions } = input;
+  if (semantics === undefined || compilerOptions === undefined) {
+    throw new Error("buildPresence needs type information.");
+  }
+  const presence: PresenceFacts = { sites: [], observed: new Map(), edges: new Map() };
+  for (const sourceFile of input.sourceFiles) {
+    const file = sourceFile.fileName;
+    const visit = (node: ts.Node): void => {
+      collectPresence(node, file, sourceFile, semantics, compilerOptions, presence);
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  return presence;
 }
 
-export interface PresenceIndex {
-  sites: PresenceSite[];
-  /** typeId -> keys observed on it ("*" = all keys) */
-  observed: Map<string, Set<string>>;
-  /** typeId -> typeIds its values flow into */
-  edges: Map<string, Set<string>>;
-}
-
-export function createPresenceIndex(): PresenceIndex {
-  return { sites: [], observed: new Map(), edges: new Map() };
-}
-
-export function collectPresence(
+function collectPresence(
   node: ts.Node,
   file: string,
   sourceFile: ts.SourceFile,
   semantics: SemanticServices,
   compilerOptions: ts.CompilerOptions,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   switch (node.kind) {
     case ts.SyntaxKind.SpreadAssignment:
@@ -93,10 +89,8 @@ export function collectPresence(
       return;
     case ts.SyntaxKind.PropertySignature:
     case ts.SyntaxKind.PropertyDeclaration:
-      handleMember(node as ts.PropertySignature | ts.PropertyDeclaration, semantics, presence);
-      return;
     case ts.SyntaxKind.IndexSignature:
-      handleIndexMember(node as ts.IndexSignatureDeclaration, semantics, presence);
+      handleMember(node as ts.PropertySignature | ts.PropertyDeclaration | ts.IndexSignatureDeclaration, semantics, presence);
       return;
     case ts.SyntaxKind.PropertyAssignment:
     case ts.SyntaxKind.ShorthandPropertyAssignment:
@@ -117,7 +111,7 @@ function handleObjectSpread(
   sourceFile: ts.SourceFile,
   semantics: SemanticServices,
   compilerOptions: ts.CompilerOptions,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   const laundering = matchLaundering(spread.expression, sourceFile);
   if (laundering !== null) {
@@ -135,7 +129,7 @@ function recordSite(
   sourceFile: ts.SourceFile,
   semantics: SemanticServices,
   compilerOptions: ts.CompilerOptions,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   const literal = spread.parent;
   const contextual = semantics.contextualType(literal);
@@ -202,7 +196,7 @@ function earlierElementProvidesKey(
 function observeMergeOperand(
   spread: ts.SpreadAssignment,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   const earlierKeys = new Set<string>();
   for (const sibling of spread.parent.properties) {
@@ -228,15 +222,10 @@ function observeMergeOperand(
 function flowIntoLiteral(
   spread: ts.SpreadAssignment,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
-  const literal = spread.parent;
   const targets = new Set<string>();
-  for (const id of typeIdsOf(semantics.typeAtLocation(literal))) targets.add(id);
-  const contextual = semantics.contextualType(literal);
-  if (contextual !== undefined) {
-    for (const id of typeIdsOf(contextual)) targets.add(id);
-  }
+  collectLiteralTypeIds(spread.parent, targets, semantics);
 
   const sourceType = semantics.typeAtLocation(spread.expression);
   if (targets.size === 0) {
@@ -248,7 +237,17 @@ function flowIntoLiteral(
   }
 }
 
-function handleBinary(node: ts.BinaryExpression, semantics: SemanticServices, presence: PresenceIndex): void {
+function collectLiteralTypeIds(
+  literal: ts.ObjectLiteralExpression,
+  targets: Set<string>,
+  semantics: SemanticServices,
+): void {
+  collectTypeIds(semantics.typeAtLocation(literal), targets, 0);
+  const contextual = semantics.contextualType(literal);
+  if (contextual !== undefined) collectTypeIds(contextual, targets, 0);
+}
+
+function handleBinary(node: ts.BinaryExpression, semantics: SemanticServices, presence: PresenceFacts): void {
   const op = node.operatorToken.kind;
   if (op === ts.SyntaxKind.InKeyword) {
     const key = ts.isStringLiteralLike(node.left) ? node.left.text : "*";
@@ -263,7 +262,7 @@ function handleBinary(node: ts.BinaryExpression, semantics: SemanticServices, pr
 function handleCall(
   call: ts.CallExpression | ts.NewExpression,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   const args = call.arguments === undefined ? [] : [...call.arguments];
   const impl = analyzableCallee(call, semantics);
@@ -319,7 +318,7 @@ function analyzableCallee(
 function handleVariableDeclaration(
   node: ts.VariableDeclaration,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   if (hasRestElement(node.name)) {
     if (node.initializer !== undefined) {
@@ -333,26 +332,22 @@ function handleVariableDeclaration(
   }
 }
 
-function handleParameter(node: ts.ParameterDeclaration, semantics: SemanticServices, presence: PresenceIndex): void {
+function handleParameter(node: ts.ParameterDeclaration, semantics: SemanticServices, presence: PresenceFacts): void {
   if (!hasRestElement(node.name)) return;
   observeEscape(semantics.typeAtLocation(node), node, semantics, presence);
 }
 
-function handleReturn(node: ts.ReturnStatement, semantics: SemanticServices, presence: PresenceIndex): void {
+function handleReturn(node: ts.ReturnStatement, semantics: SemanticServices, presence: PresenceFacts): void {
   if (node.expression === undefined) return;
   const fn = enclosingFunction(node);
   if (fn === undefined || fn.type === undefined) return;
-  const declared = semantics.typeFromTypeNode(fn.type);
-  const exprType = semantics.typeAtLocation(node.expression);
-  edgeTypes(exprType, declared, node, semantics, presence);
-  const awaited = semantics.awaitedType(declared);
-  if (awaited !== undefined) edgeTypes(exprType, awaited, node, semantics, presence);
+  flowReturnExpression(node.expression, fn.type, node, semantics, presence);
 }
 
 function handleCast(
   node: ts.AsExpression | ts.SatisfiesExpression,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   edgeTypes(semantics.typeAtLocation(node.expression), semantics.typeFromTypeNode(node.type), node, semantics, presence);
 }
@@ -364,24 +359,11 @@ function handleCast(
  * observations of anything the container flows into.
  */
 function handleMember(
-  node: ts.PropertySignature | ts.PropertyDeclaration,
+  node: ts.PropertySignature | ts.PropertyDeclaration | ts.IndexSignatureDeclaration,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   if (node.type === undefined) return;
-  const containerIds = typeIdsOf(semantics.typeAtLocation(node.parent));
-  if (containerIds.length === 0) return;
-  for (const from of memberTypeIds(semantics.typeFromTypeNode(node.type), semantics)) {
-    for (const to of containerIds) addEdge(presence, from, to);
-  }
-}
-
-/** Index-signature values are members too: `{ [k: string]: V }` contains V. */
-function handleIndexMember(
-  node: ts.IndexSignatureDeclaration,
-  semantics: SemanticServices,
-  presence: PresenceIndex,
-): void {
   const containerIds = typeIdsOf(semantics.typeAtLocation(node.parent));
   if (containerIds.length === 0) return;
   for (const from of memberTypeIds(semantics.typeFromTypeNode(node.type), semantics)) {
@@ -397,7 +379,7 @@ function handleIndexMember(
 function handlePropertyFlow(
   node: ts.PropertyAssignment | ts.ShorthandPropertyAssignment,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   const value = ts.isPropertyAssignment(node) ? node.initializer : node.name;
   if (isInertValueSyntax(value)) return;
@@ -407,12 +389,7 @@ function handlePropertyFlow(
   if (slot !== undefined) {
     for (const id of typeIdsOf(slot)) targets.add(id);
   }
-  const literal = node.parent;
-  for (const id of typeIdsOf(semantics.typeAtLocation(literal))) targets.add(id);
-  const contextual = semantics.contextualType(literal);
-  if (contextual !== undefined) {
-    for (const id of typeIdsOf(contextual)) targets.add(id);
-  }
+  collectLiteralTypeIds(node.parent, targets, semantics);
   if (targets.size === 0) return;
 
   for (const from of memberTypeIds(semantics.typeAtLocation(value), semantics)) {
@@ -468,28 +445,38 @@ function memberTypeIds(type: ts.Type, semantics: SemanticServices): string[] {
 }
 
 /** `(): X => expr` has no ReturnStatement; flow the body into the annotation. */
-function handleArrowBody(node: ts.ArrowFunction, semantics: SemanticServices, presence: PresenceIndex): void {
+function handleArrowBody(node: ts.ArrowFunction, semantics: SemanticServices, presence: PresenceFacts): void {
   if (node.type === undefined) return;
   if (ts.isBlock(node.body)) return;
-  const declared = semantics.typeFromTypeNode(node.type);
-  const exprType = semantics.typeAtLocation(node.body);
-  edgeTypes(exprType, declared, node, semantics, presence);
+  flowReturnExpression(node.body, node.type, node, semantics, presence);
+}
+
+function flowReturnExpression(
+  expression: ts.Expression,
+  annotation: ts.TypeNode,
+  at: ts.Node,
+  semantics: SemanticServices,
+  presence: PresenceFacts,
+): void {
+  const declared = semantics.typeFromTypeNode(annotation);
+  const exprType = semantics.typeAtLocation(expression);
+  edgeTypes(exprType, declared, at, semantics, presence);
   const awaited = semantics.awaitedType(declared);
-  if (awaited !== undefined) edgeTypes(exprType, awaited, node, semantics, presence);
+  if (awaited !== undefined) edgeTypes(exprType, awaited, at, semantics, presence);
 }
 
 // ---------------------------------------------------------------------------
 // Fact primitives
 
-function observeExpr(expr: ts.Expression, key: string, semantics: SemanticServices, presence: PresenceIndex): void {
+function observeExpr(expr: ts.Expression, key: string, semantics: SemanticServices, presence: PresenceFacts): void {
   observeType(semantics.typeAtLocation(expr), key, presence);
 }
 
-function observeType(type: ts.Type, key: string, presence: PresenceIndex): void {
+function observeType(type: ts.Type, key: string, presence: PresenceFacts): void {
   for (const id of typeIdsOf(type)) markObserved(presence, id, key);
 }
 
-function markObserved(presence: PresenceIndex, id: string, key: string): void {
+function markObserved(presence: PresenceFacts, id: string, key: string): void {
   const keys = presence.observed.get(id);
   if (keys === undefined) {
     presence.observed.set(id, new Set([key]));
@@ -506,7 +493,7 @@ function markObserved(presence: PresenceIndex, id: string, key: string): void {
  * exhausting the budget only loses observations, which errs toward silence
  * for the consuming rule.
  */
-function observeEscape(type: ts.Type, at: ts.Node, semantics: SemanticServices, presence: PresenceIndex): void {
+function observeEscape(type: ts.Type, at: ts.Node, semantics: SemanticServices, presence: PresenceFacts): void {
   const seen = new Set<string>();
   let budget = 64;
 
@@ -568,7 +555,7 @@ function edgeTypes(
   toType: ts.Type,
   at: ts.Node,
   semantics: SemanticServices,
-  presence: PresenceIndex,
+  presence: PresenceFacts,
 ): void {
   if ((toType.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) {
     observeEscape(fromType, at, semantics, presence);
@@ -581,7 +568,7 @@ function edgeTypes(
   }
 }
 
-function addEdge(presence: PresenceIndex, from: string, to: string): void {
+function addEdge(presence: PresenceFacts, from: string, to: string): void {
   if (from === to) return;
   const tos = presence.edges.get(from);
   if (tos === undefined) {
@@ -620,7 +607,7 @@ function addSymbolId(symbol: ts.Symbol | undefined, out: Set<string>): void {
   if (declarations === undefined) return;
   const first = declarations[0];
   if (first === undefined) return;
-  out.add(`${first.getSourceFile().fileName}:${first.getStart()}`);
+  out.add(nodeId(first, first.getSourceFile()));
 }
 
 // ---------------------------------------------------------------------------

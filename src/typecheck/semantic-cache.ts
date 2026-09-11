@@ -33,6 +33,10 @@ export class SemanticCache implements SemanticServices {
     return symbol;
   }
 
+  shorthandAssignmentValueSymbol(node: ts.ShorthandPropertyAssignment): ts.Symbol | undefined {
+    return this.checker.getShorthandAssignmentValueSymbol(node);
+  }
+
   resolvedSignature(node: ts.CallLikeExpression): ts.Signature | undefined {
     const cached = this.resolvedSignatures.get(node);
     if (cached !== undefined) return cached ?? undefined;

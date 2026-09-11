@@ -2,16 +2,16 @@ import { readFileSync } from "node:fs";
 import fg from "fast-glob";
 import { expect } from "vitest";
 import type { CrossFileRule, TSRule, Diagnostic } from "../src/rules/types.ts";
-import { collectProject } from "../src/collect/index.ts";
+import { buildGraph } from "../src/graph/graph.ts";
 import { groupFilesByTsconfig, createProgramForGroup } from "../src/typecheck/program.ts";
+import { runTSRules } from "../src/typecheck/walk.ts";
 
 /** Run a TS rule against a fixture file with full type checking. */
 function runTSRule(rule: TSRule, fixturePath: string): Diagnostic[] {
   const [group] = groupFilesByTsconfig([fixturePath]);
   if (!group) return [];
   const program = createProgramForGroup(group, {});
-  const { diagnostics } = collectProject(program, [rule]);
-  return diagnostics;
+  return runTSRules(program, [rule], new Set([fixturePath]));
 }
 
 /** Parse `// @expect <rule-id>` annotations from source. Returns set of 1-based line numbers. */
@@ -60,8 +60,8 @@ export function runCrossFileRule(rule: CrossFileRule, fixtureDir: string): Diagn
   const [group] = groupFilesByTsconfig(files);
   if (!group) return [];
   const program = createProgramForGroup(group, {});
-  const { index } = collectProject(program);
-  return rule.analyze(index);
+  const graph = buildGraph(program);
+  return rule.analyze(graph);
 }
 
 /** Assert cross-file rule produces 0 diagnostics on valid fixture directory. */

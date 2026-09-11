@@ -280,6 +280,19 @@ describe("cross-group usage merge", () => {
     expect(result.diagnostics[0]?.file).toBe(lib);
     expect(result.diagnostics[0]?.message).toContain("trulyUnused");
   });
+
+  it("merges dynamic property-call usage across groups with different compiler options", async () => {
+    const lib = new URL("./fixtures/cross-group-dynamic-usage/lib/library.ts", import.meta.url).pathname;
+    const app = new URL("./fixtures/cross-group-dynamic-usage/app/index.ts", import.meta.url).pathname;
+    const result = await scan({ paths: [lib, app], rules: ["unused-export"], cache: false });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]).toMatchObject({
+      file: lib,
+      ruleId: "unused-export",
+      line: 5,
+    });
+    expect(result.diagnostics[0]?.message).toContain("trulyUnused");
+  });
 });
 
 describe("cache", () => {

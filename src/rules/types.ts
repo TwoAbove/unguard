@@ -4,6 +4,8 @@ export interface SemanticServices {
   checker: ts.TypeChecker;
   typeAtLocation(node: ts.Node): ts.Type;
   symbolAtLocation(node: ts.Node): ts.Symbol | undefined;
+  /** The value a shorthand property (`{ x }`) reads; `symbolAtLocation` on its name yields the property instead. */
+  shorthandAssignmentValueSymbol(node: ts.ShorthandPropertyAssignment): ts.Symbol | undefined;
   resolvedSignature(node: ts.CallLikeExpression): ts.Signature | undefined;
   typeFromTypeNode(node: ts.TypeNode): ts.Type;
   contextualType(node: ts.Expression): ts.Type | undefined;
@@ -70,30 +72,18 @@ export interface TSRule {
   visit(node: ts.Node, ctx: TSVisitContext): void;
 }
 
-import type { ProjectIndex } from "../collect/index.ts";
-export type { ProjectIndex };
-
-export type ProjectIndexNeed =
-  | "files"
-  | "types"
-  | "functions"
-  | "functionSymbols"
-  | "constants"
-  | "callSites"
-  | "callSiteSymbols"
-  | "overloadCallSignatures"
-  | "imports"
-  | "fileHashes"
-  | "statementSequences"
-  | "inlineParamTypes"
-  | "presence";
+import type { Graph } from "../graph/types.ts";
 
 export interface CrossFileRule {
   id: string;
   severity: "info" | "warning" | "error";
   message: string;
-  requires?: readonly ProjectIndexNeed[];
-  analyze(project: ProjectIndex, context?: CrossFileAnalysisContext): Diagnostic[];
+  /**
+   * Defaults to true. Set false only when the rule uses no checker-backed
+   * query: calls, callers, overloads, readers, or presence.
+   */
+  requiresTypeInfo?: boolean;
+  analyze(graph: Graph, context?: CrossFileAnalysisContext): Diagnostic[];
   /**
    * Cross-group merge, both hooks or neither. Analysis runs one tsconfig
    * group at a time; a rule that would mistake another group's usage for
@@ -102,7 +92,7 @@ export interface CrossFileRule {
    * in a worker, so facts must survive structuredClone (no ts.Node/ts.Symbol).
    * `finalizeGlobal` runs once on the main thread with every group's facts.
    */
-  collectGlobalFacts?(project: ProjectIndex, context?: CrossFileAnalysisContext): unknown;
+  collectGlobalFacts?(graph: Graph, context?: CrossFileAnalysisContext): unknown;
   finalizeGlobal?(facts: unknown[]): Diagnostic[];
 }
 

@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { dumpDeclaration } from "./graph/dump.ts";
+import { buildGraph } from "./graph/graph.ts";
+import { createProgramForGroup, groupFilesByTsconfig } from "./typecheck/program.ts";
 import pc from "picocolors";
 import { executeScan, type FailOn, type RulePolicyEntry, type RulePolicySeverity, type Severity } from "./engine.ts";
 import { BASELINE_FILENAME, buildBaseline, loadBaseline, writeBaseline, type BaselineData } from "./scan/baseline.ts";
@@ -19,7 +22,7 @@ interface UnguardConfig {
   cache?: boolean;
 }
 
-const COMMANDS: Record<string, true> = { scan: true, smell: true, fix: true, baseline: true };
+const COMMANDS: Record<string, true> = { scan: true, smell: true, fix: true, baseline: true, graph: true };
 
 // @unguard unused-export CLI entry point
 export async function main(argv: string[]): Promise<number> {
@@ -56,6 +59,14 @@ export async function main(argv: string[]): Promise<number> {
     printHelp();
     return 0;
   }
+  if (command === "graph") {
+    try {
+      return runGraph(cliPaths);
+    } catch (err) {
+      return printErrorAndFail(err);
+    }
+  }
+
 
 
   let config: UnguardConfig | null = null;
@@ -166,6 +177,25 @@ export async function main(argv: string[]): Promise<number> {
   printSummary(diagnostics, execution.fileCount, noun);
 
   return exitCode;
+}
+
+function runGraph(args: string[]): number {
+  const location = args[0];
+  if (args.length !== 1 || location === undefined) {
+    throw new Error("Usage: unguard graph <file>:<line>");
+  }
+  const match = /^(.*):([1-9]\d*)$/.exec(location);
+  if (match === null || match[1] === undefined || match[2] === undefined) {
+    throw new Error("Usage: unguard graph <file>:<line>");
+  }
+
+  const file = resolve(match[1]);
+  if (!existsSync(file)) throw new Error(`File not found: ${match[1]}`);
+  const [group] = groupFilesByTsconfig([file]);
+  if (group === undefined) throw new Error(`Could not build a TypeScript program for ${file}`);
+  const program = createProgramForGroup(group, { expandProjectFiles: true });
+  console.log(dumpDeclaration(buildGraph(program), file, Number(match[2])));
+  return 0;
 }
 
 interface JsonDiagnostic {
