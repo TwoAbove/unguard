@@ -333,7 +333,9 @@ describe("calls", () => {
     const parseCalls = graph.calls().filter((call) => call.callee === parse.id);
     expect(graph.overloads(parse.id)).toHaveLength(3);
     expect(parseCalls).toHaveLength(2);
-    expect(parseCalls.map((call) => call.resolvedSignature)).toEqual([0, 1]);
+    expect(parseCalls.map((call) => call.resolvedSignature)).toEqual(
+      graph.overloads(parse.id).filter((signature) => !signature.hasBody).map((signature) => signature.id),
+    );
   });
 });
 

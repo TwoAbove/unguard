@@ -1,5 +1,5 @@
 import type { CrossFileRule, Diagnostic } from "../types.ts";
-import { signatureChangeCallers } from "./callers.ts";
+import { collectFunctionCallerFacts, mergeCallerFacts, type FunctionCallerFacts } from "./callers.ts";
 
 /**
  * The mirror of `optional-arg-always-used`: an optional (or defaulted)
@@ -11,32 +11,38 @@ export const optionalArgNeverUsed: CrossFileRule = {
   severity: "warning",
   message: "Optional parameter is never provided at any call site; remove it",
 
-  analyze(graph): Diagnostic[] {
-    const diagnostics: Diagnostic[] = [];
+  collectGlobalFacts: collectFunctionCallerFacts,
 
-    for (const fn of graph.functions()) {
-      const callers = signatureChangeCallers(graph, fn, 2);
-      if (callers === null) continue;
+  finalizeGlobal(facts: unknown[]): Diagnostic[] {
+    return finalize(facts as FunctionCallerFacts[], this.severity);
+  },
 
-      const neverProvided: string[] = [];
-      for (let i = 0; i < fn.params.length; i++) {
-        const param = fn.params[i];
-        if (param === undefined || (!param.optional && !param.hasDefault)) continue;
-        if (callers.every((call) => call.args.length <= i)) neverProvided.push(param.name);
-      }
-      if (neverProvided.length === 0) continue;
-
-      const names = neverProvided.map((name) => `"${name}"`).join(", ");
-      diagnostics.push({
-        ruleId: this.id,
-        severity: this.severity,
-        message: `Optional parameter${neverProvided.length > 1 ? "s" : ""} ${names} ${neverProvided.length > 1 ? "are" : "is"} never provided at any of the ${callers.length} call sites; remove ${neverProvided.length > 1 ? "them" : "it"} and inline the default`,
-        file: fn.site.file,
-        line: fn.site.line,
-        column: fn.site.column,
-      });
-    }
-
-    return diagnostics;
+  analyze(graph, context): Diagnostic[] {
+    return finalize([collectFunctionCallerFacts(graph, context)], this.severity);
   },
 };
+
+function finalize(factsList: FunctionCallerFacts[], severity: Diagnostic["severity"]): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  for (const { candidate: fn, evidence } of mergeCallerFacts(factsList)) {
+    if (evidence.sites.size < 2 || evidence.hasSpread) continue;
+    const neverProvided: string[] = [];
+    for (let i = 0; i < fn.params.length; i++) {
+      const param = fn.params[i];
+      if (param === undefined || (!param.optional && !param.hasDefault)) continue;
+      if (evidence.observations.every((call) => call.args.length <= i)) neverProvided.push(param.name);
+    }
+    if (neverProvided.length === 0) continue;
+
+    const names = neverProvided.map((name) => `"${name}"`).join(", ");
+    diagnostics.push({
+      ruleId: optionalArgNeverUsed.id,
+      severity,
+      message: `Optional parameter${neverProvided.length > 1 ? "s" : ""} ${names} ${neverProvided.length > 1 ? "are" : "is"} never provided at any of the ${evidence.sites.size} call sites; remove ${neverProvided.length > 1 ? "them" : "it"} and inline the default`,
+      file: fn.site.file,
+      line: fn.site.line,
+      column: fn.site.column,
+    });
+  }
+  return diagnostics;
+}

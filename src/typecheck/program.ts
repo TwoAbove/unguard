@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 export interface ProgramGroupConfig {
   configPath: string | undefined;
@@ -42,25 +42,36 @@ export function createProgramBuildCache(): ProgramBuildCache {
   };
 }
 
+function parseConfig(configPath: string, dependencies?: Set<string>): ts.ParsedCommandLine {
+  const readFile = (path: string): string | undefined => {
+    dependencies?.add(resolve(path));
+    return ts.sys.readFile(path);
+  };
+  const absolutePath = resolve(configPath);
+  const configFile = ts.readConfigFile(absolutePath, readFile);
+  return ts.parseJsonConfigFileContent(
+    configFile.config,
+    { ...ts.sys, readFile },
+    dirname(absolutePath),
+  );
+}
+
+function effectiveOptions(configPath: string | undefined): ts.CompilerOptions {
+  return configPath
+    ? { ...parseConfig(configPath).options, skipLibCheck: true }
+    : defaultOptions;
+}
+
 function createProgramForConfig(
   files: string[],
   configPath: string | undefined,
   cache: ProgramBuildCache | undefined,
 ): ts.Program {
-  if (configPath) {
-    const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
-    const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, dirname(configPath));
-    const options = { ...parsed.options, skipLibCheck: true };
-    return ts.createProgram({
-      rootNames: files,
-      options,
-      host: maybeCachedCompilerHost(options, cache),
-    });
-  }
+  const options = effectiveOptions(configPath);
   return ts.createProgram({
     rootNames: files,
-    options: defaultOptions,
-    host: maybeCachedCompilerHost(defaultOptions, cache),
+    options,
+    host: maybeCachedCompilerHost(options, cache),
   });
 }
 
@@ -158,33 +169,32 @@ export function expandProjectFiles(group: ProgramGroupConfig): string[] {
   const expanded = new Set(group.scanFiles);
   for (const cp of configs) {
     if (!cp) continue;
-    const configFile = ts.readConfigFile(cp, ts.sys.readFile);
-    const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, dirname(cp));
+    const parsed = parseConfig(cp);
     for (const f of parsed.fileNames) expanded.add(f);
   }
   return [...expanded];
 }
 
+/** Config files read while resolving each project's inherited configuration. */
+export function getProgramConfigDependencies(group: ProgramGroupConfig): string[] {
+  const dependencies = new Set<string>();
+  for (const configPath of [group.configPath, ...(group.expandConfigPaths ?? [])]) {
+    if (configPath) parseConfig(configPath, dependencies);
+  }
+  return [...dependencies];
+}
+
 function effectiveOptionsKey(configPath: string | undefined): string {
-  if (!configPath) return "\0default";
-  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
-  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, dirname(configPath));
-  const o = parsed.options;
-  return JSON.stringify({
-    target: o.target,
-    module: o.module,
-    moduleResolution: o.moduleResolution,
-    jsx: o.jsx,
-    strict: o.strict,
-    strictNullChecks: o.strictNullChecks,
-    exactOptionalPropertyTypes: o.exactOptionalPropertyTypes,
-    noUncheckedIndexedAccess: o.noUncheckedIndexedAccess,
-    paths: o.paths,
-    baseUrl: o.baseUrl,
-    lib: o.lib,
-    types: o.types,
-    esModuleInterop: o.esModuleInterop,
-  });
+  // Parsed path options (including pathsBasePath) retain their absolute origin.
+  // Only compiler-option property order is irrelevant. Preserve nested object
+  // and array order: both can encode module-resolution precedence.
+  const options = { ...effectiveOptions(configPath) };
+  // TypeScript's getPathsBasePath uses baseUrl before pathsBasePath. Only in
+  // that case is the parser's config-directory metadata semantically inert.
+  if (options.baseUrl !== undefined) options.pathsBasePath = undefined;
+  return JSON.stringify(
+    Object.fromEntries(Object.keys(options).sort().map((key) => [key, options[key]])),
+  );
 }
 
 /** Merge groups whose tsconfigs produce identical effective compiler options. */

@@ -241,6 +241,11 @@ class ProjectGraph implements Graph {
     return this.refs().overloads.values();
   }
 
+  signatureConstraints(): ReadonlySet<NodeId> {
+    this.requireTypeInfo("signatureConstraints");
+    return this.refs().signatureConstraints;
+  }
+
   readers(decl: NodeId): readonly ReaderFact[] {
     this.requireTypeInfo("readers");
     return this.refs().readers.get(decl) ?? [];

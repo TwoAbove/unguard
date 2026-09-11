@@ -22,6 +22,7 @@ export interface ReferenceFacts {
   calls: CallFact[];
   overloads: Map<NodeId, OverloadFamilyFact>;
   readers: Map<NodeId, ReaderFact[]>;
+  signatureConstraints: Set<NodeId>;
 }
 
 type SignatureNode =
@@ -40,6 +41,7 @@ export function buildReferences(input: GraphInput): ReferenceFacts {
     calls: [],
     overloads: new Map(),
     readers: new Map(),
+    signatureConstraints: new Set(),
   };
   const projectFiles = new Set(input.sourceFiles.map((sourceFile) => sourceFile.fileName));
 
@@ -58,12 +60,17 @@ export function buildReferences(input: GraphInput): ReferenceFacts {
   const semantics = input.semantics;
   if (semantics === undefined) return facts;
 
+  const checker = input.checker;
+  const visited = new Set<ts.Node>();
   for (const sourceFile of input.sourceFiles) {
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
-        collectCall(node, sourceFile, semantics, facts.overloads, facts.calls);
+        collectCall(node, sourceFile, semantics, facts.calls);
       } else if (ts.isIdentifier(node)) {
         collectReader(node, sourceFile, semantics, facts.readers);
+      } else if (checker !== undefined &&
+        (ts.isClassDeclaration(node) || ts.isClassExpression(node) || ts.isInterfaceDeclaration(node))) {
+        collectSignatureConstraints(node, checker, facts.signatureConstraints, visited);
       }
       ts.forEachChild(node, visit);
     };
@@ -71,6 +78,52 @@ export function buildReferences(input: GraphInput): ReferenceFacts {
   }
 
   return facts;
+}
+
+function collectSignatureConstraints(
+  node: ts.ClassLikeDeclaration | ts.InterfaceDeclaration,
+  checker: ts.TypeChecker,
+  constraints: Set<NodeId>,
+  visited: Set<ts.Node>,
+): void {
+  if (visited.has(node)) return;
+  visited.add(node);
+  // Class and interface types carry their declaration symbol, including anonymous classes.
+  const symbol = checker.getTypeAtLocation(node).symbol;
+  const instance = checker.getDeclaredTypeOfSymbol(symbol);
+  const constrain = (derived: ts.Type, base: ts.Type): void => {
+    const members = new Map(checker.getPropertiesOfType(derived).map((member) => [member.escapedName, member]));
+    for (const baseMember of checker.getPropertiesOfType(base)) {
+      const member = members.get(baseMember.escapedName);
+      if (member === undefined || member === baseMember) continue;
+      const declaration = canonicalDeclaration(member);
+      const baseDeclaration = canonicalDeclaration(baseMember);
+      if (declaration === baseDeclaration) continue;
+      const baseType = checker.getTypeOfSymbolAtLocation(baseMember, node);
+      const memberType = checker.getTypeOfSymbolAtLocation(member, node);
+      if (checker.getSignaturesOfType(baseType, ts.SignatureKind.Call).length === 0 ||
+        checker.getSignaturesOfType(memberType, ts.SignatureKind.Call).length === 0) continue;
+      for (const entry of [declaration, baseDeclaration]) {
+        const id = sourceDeclarationId(entry);
+        if (id !== null) constraints.add(id);
+      }
+    }
+  };
+  for (const clause of node.heritageClauses ?? []) {
+    for (const heritage of clause.types) {
+      const base = checker.getTypeAtLocation(heritage);
+      constrain(instance, base);
+      if (clause.token === ts.SyntaxKind.ExtendsKeyword && !ts.isInterfaceDeclaration(node)) {
+        constrain(checker.getTypeOfSymbolAtLocation(symbol, node), checker.getTypeAtLocation(heritage.expression));
+      }
+      for (const declaration of base.getSymbol()?.declarations ?? []) {
+        if (ts.isClassDeclaration(declaration) || ts.isClassExpression(declaration) ||
+          ts.isInterfaceDeclaration(declaration)) {
+          collectSignatureConstraints(declaration, checker, constraints, visited);
+        }
+      }
+    }
+  }
 }
 
 function collectImport(
@@ -316,22 +369,13 @@ function collectCall(
   node: ts.CallExpression | ts.NewExpression,
   sourceFile: ts.SourceFile,
   semantics: SemanticServices,
-  overloads: Map<NodeId, OverloadFamilyFact>,
   calls: CallFact[],
 ): void {
   if (!ts.isIdentifier(node.expression) && !ts.isPropertyAccessExpression(node.expression)) return;
   const symbol = resolveSymbol(node.expression, semantics);
   const callee = sourceDeclarationId(canonicalDeclaration(symbol));
 
-  let resolvedSignature: number | null = null;
-  if (callee !== null && (symbol?.declarations?.length ?? 0) >= 2) {
-    const declaration = semantics.resolvedSignature(node)?.declaration;
-    if (declaration !== undefined && sourceDeclarationId(declaration) !== null) {
-      const signatureId = nodeId(declaration, declaration.getSourceFile());
-      const index = overloads.get(callee)?.signatures.findIndex((signature) => signature.id === signatureId) ?? -1;
-      if (index >= 0) resolvedSignature = index;
-    }
-  }
+  const resolvedSignature = sourceDeclarationId(semantics.resolvedSignature(node)?.declaration);
 
   calls.push({
     id: nodeId(node, sourceFile),

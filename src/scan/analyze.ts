@@ -5,13 +5,15 @@ import type { Graph } from "../graph/types.ts";
 import { isTSRule } from "../rules/types.ts";
 import type { CrossFileRule, Diagnostic, Rule, TSRule } from "../rules/types.ts";
 import { collectAllComments, type CommentInfo } from "../typecheck/comments.ts";
-import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup, createProgramBuildCache, expandProjectFiles, type ProgramGroupConfig } from "../typecheck/program.ts";
+import { groupFilesByTsconfig, mergeCompatibleGroups, createProgramForGroup, createProgramBuildCache, expandProjectFiles, type ProgramBuildCache, type ProgramGroupConfig } from "../typecheck/program.ts";
 import { runTSRules, runTSRulesOnSource } from "../typecheck/walk.ts";
 import { runGroupsInWorkers, workersAvailable, type GroupTask } from "./worker-pool.ts";
 
 export interface AnalyzeOptions {
   /** Maximum number of worker threads. <= 1 disables parallelism. */
   concurrency?: number;
+  /** Reuse source parsing and filesystem reads from the cache-input preflight. */
+  programCache?: ProgramBuildCache;
 }
 
 export async function analyzeFiles(files: string[], rules: Rule[], options: AnalyzeOptions): Promise<Diagnostic[]> {
@@ -29,7 +31,7 @@ export async function analyzeFiles(files: string[], rules: Rule[], options: Anal
     return await runGroupsViaWorkers(groupConfigs, rules, concurrency);
   }
 
-  return runGroupsSerial(groupConfigs, tsRules, crossFileRules);
+  return runGroupsSerial(groupConfigs, tsRules, crossFileRules, options.programCache);
 }
 
 /** A cross-file rule that merges facts across tsconfig groups before judging. */
@@ -52,8 +54,8 @@ function runGroupsSerial(
   groupConfigs: ProgramGroupConfig[],
   tsRules: TSRule[],
   crossFileRules: CrossFileRule[],
+  programCache = createProgramBuildCache(),
 ): Diagnostic[] {
-  const programCache = createProgramBuildCache();
   const allDiagnostics: Diagnostic[] = [];
   const factsByRule = new Map<string, unknown[]>();
 

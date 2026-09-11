@@ -21,6 +21,9 @@ export function dumpDeclaration(graph: Graph, file: string, line: number): strin
     ))),
     section("callers", typeInfoRows(graph, () => graph.callers(declaration.id).map(formatCall))),
     section("overloads", typeInfoRows(graph, () => graph.overloads(declaration.id).map(formatSignature))),
+    section("signature constraints", typeInfoRows(graph, () =>
+      graph.signatureConstraints().has(declaration.id) ? ["inherited member contract"] : []
+    )),
     section("importers", graph.importers(declaration.site.file).map((entry) =>
       `${entry.kind} ${entry.file}:${entry.site.line} ${entry.importedName}→${entry.localName}`
     )),

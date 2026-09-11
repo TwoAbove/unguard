@@ -1,6 +1,6 @@
-import type { ArgShape } from "../../graph/types.ts";
-import type { CrossFileRule, Diagnostic } from "../types.ts";
-import { signatureChangeCallers } from "./callers.ts";
+import type { Graph } from "../../graph/types.ts";
+import type { CrossFileAnalysisContext, CrossFileRule, Diagnostic } from "../types.ts";
+import { collectFunctionCallerFacts, mergeCallerFacts, type FunctionCallerFacts } from "./callers.ts";
 
 /**
  * A parameter that receives the identical literal at every call site is not
@@ -12,41 +12,46 @@ export const constantArgument: CrossFileRule = {
   severity: "warning",
   message: "Parameter receives the same literal at every call site; inline the value",
 
-  analyze(graph): Diagnostic[] {
-    const diagnostics: Diagnostic[] = [];
+  collectGlobalFacts(graph: Graph, context?: CrossFileAnalysisContext): FunctionCallerFacts {
+    return collectFunctionCallerFacts(graph, context);
+  },
 
-    for (const fn of graph.functions()) {
-      const callers = signatureChangeCallers(graph, fn, 3);
-      if (callers === null) continue;
+  finalizeGlobal(facts: unknown[]): Diagnostic[] {
+    return finalize(facts as FunctionCallerFacts[], this.severity);
+  },
 
-      for (let i = 0; i < fn.params.length; i++) {
-        const param = fn.params[i];
-        if (param === undefined) continue;
-
-        const first: ArgShape | undefined = callers[0]?.args[i];
-        if (first?.kind !== "literal") continue;
-        const firstText: string = first.text;
-        if (
-          !callers.every((call) => {
-            const arg = call.args[i];
-            return arg?.kind === "literal" && arg.text === firstText;
-          })
-        ) {
-          continue;
-        }
-
-        diagnostics.push({
-          ruleId: this.id,
-          severity: this.severity,
-          message: `Parameter "${param.name}" receives ${firstText} at all ${callers.length} call sites; inline the value and remove the parameter`,
-          file: fn.site.file,
-          line: fn.site.line,
-          column: fn.site.column,
-        });
-      }
-    }
-
-    return diagnostics;
+  analyze(graph: Graph, context?: CrossFileAnalysisContext): Diagnostic[] {
+    return finalize([collectFunctionCallerFacts(graph, context)], this.severity);
   },
 };
+
+function finalize(factsList: FunctionCallerFacts[], severity: Diagnostic["severity"]): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  for (const { candidate, evidence } of mergeCallerFacts(factsList)) {
+    if (evidence.sites.size < 3 || evidence.hasSpread) continue;
+    for (const [i, { name }] of candidate.params.entries()) {
+      const first = evidence.observations[0]?.args[i];
+      if (first?.kind !== "literal") continue;
+      const firstText = first.text;
+      if (
+        !evidence.observations.every((call) => {
+          const arg = call.args[i];
+          return arg?.kind === "literal" && arg.text === firstText;
+        })
+      ) {
+        continue;
+      }
+
+      diagnostics.push({
+        ruleId: constantArgument.id,
+        severity,
+        message: `Parameter "${name}" receives ${firstText} at all ${evidence.sites.size} call sites; inline the value and remove the parameter`,
+        file: candidate.site.file,
+        line: candidate.site.line,
+        column: candidate.site.column,
+      });
+    }
+  }
+  return diagnostics;
+}
 

@@ -2,8 +2,17 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Diagnostic, Rule } from "../rules/types.ts";
+import {
+  createProgramBuildCache,
+  createProgramForGroup,
+  expandProjectFiles,
+  getProgramConfigDependencies,
+  groupFilesByTsconfig,
+  mergeCompatibleGroups,
+  type ProgramBuildCache,
+} from "../typecheck/program.ts";
 
-const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
 const CACHE_FILENAME = "scan-cache.json";
 
 export interface ScanCacheEntry {
@@ -21,6 +30,8 @@ export interface ScanKeyInput {
   unguardVersion: string;
   rules: readonly Rule[];
   paths: readonly string[];
+  /** Discovered reportable roots, distinct from the semantic dependency set. */
+  reportableFiles: readonly string[];
   ignore: readonly string[];
   failOn: string;
 }
@@ -28,6 +39,27 @@ export interface ScanKeyInput {
 export interface CacheCheckContext {
   unguardVersion: string;
   scanKey: string;
+}
+
+/**
+ * Refresh project membership and module resolution without running the checker.
+ * Stored dependency lists alone cannot discover newly included files or imports
+ * that now resolve. Compiler-host reads also cover package resolution metadata.
+ */
+export function collectCacheInputs(files: string[]): {
+  files: string[];
+  programCache: ProgramBuildCache;
+} {
+  const inputs = new Set(files);
+  const cache = createProgramBuildCache();
+  for (const group of mergeCompatibleGroups(groupFilesByTsconfig(files))) {
+    for (const file of getProgramConfigDependencies(group)) inputs.add(file);
+    for (const file of expandProjectFiles(group)) inputs.add(file);
+    const program = createProgramForGroup(group, { expandProjectFiles: true, cache });
+    for (const source of program.getSourceFiles()) inputs.add(source.fileName);
+  }
+  for (const file of cache.readFiles.keys()) inputs.add(file);
+  return { files: [...inputs].sort(), programCache: cache };
 }
 
 /** Walk up from `startDir` to the nearest `node_modules`, returning its `.cache/unguard/v<N>` subdir. */
@@ -51,6 +83,7 @@ export function computeScanKey(input: ScanKeyInput): string {
     unguardVersion: input.unguardVersion,
     ruleSig,
     paths: [...input.paths].sort(),
+    reportableFiles: [...input.reportableFiles].sort(),
     ignore: [...input.ignore].sort(),
     failOn: input.failOn,
   });
@@ -58,6 +91,7 @@ export function computeScanKey(input: ScanKeyInput): string {
 }
 
 export function hashFile(path: string, prevFingerprint: string | undefined): string {
+  if (!existsSync(path)) return "missing";
   const s = statSync(path, { bigint: true });
   const statTag = `${s.size}:${s.mtimeNs.toString()}`;
   if (prevFingerprint !== undefined) {

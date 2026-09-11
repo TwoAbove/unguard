@@ -182,10 +182,6 @@ function collectFunction(node: ts.Node, sourceFile: ts.SourceFile, functions: Fu
       buildFunctionFact(node, node, `${className}.${node.name.text}`, sourceFile, {
         exported: isExported(parent),
         className,
-        implementsInterface:
-          parent.heritageClauses?.some(
-            (clause) => clause.token === ts.SyntaxKind.ImplementsKeyword,
-          ) ?? false,
       }),
     );
   }
@@ -195,7 +191,6 @@ interface FunctionExtras {
   exported?: boolean;
   exportedAsDefault?: boolean;
   className?: string;
-  implementsInterface?: boolean;
 }
 
 function buildFunctionFact(
@@ -226,7 +221,6 @@ function buildFunctionFact(
     bodyLength: analysis.bodyLength,
     normalizedBodyLength: analysis.normalizedBodyLength,
     className: extras.className ?? null,
-    implementsInterface: extras.implementsInterface ?? false,
     statementCount: ts.isBlock(body) ? body.statements.length : 1,
     hasControlFlow: hasControlFlow(body),
     isAssignmentOnly: isAssignmentOnly(body),

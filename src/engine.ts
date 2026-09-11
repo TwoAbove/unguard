@@ -2,7 +2,7 @@ import { availableParallelism } from "node:os";
 import { createRequire } from "node:module";
 import { allRules } from "./rules/index.ts";
 import { analyzeFiles } from "./scan/analyze.ts";
-import { cacheCovers, computeScanKey, hashFiles, readScanCache, resolveCacheDir, writeScanCache } from "./scan/cache.ts";
+import { CACHE_VERSION, cacheCovers, collectCacheInputs, computeScanKey, hashFiles, readScanCache, resolveCacheDir, writeScanCache } from "./scan/cache.ts";
 import { resolveScanConfig } from "./scan/config.ts";
 import { discoverFiles } from "./scan/discover.ts";
 import { buildRuleDescriptors, finalizeScanResult, resolveActiveRules, toScanResult } from "./scan/policy.ts";
@@ -35,21 +35,22 @@ export async function executeScan(options: ScanOptions): Promise<ScanExecutionRe
       unguardVersion: UNGUARD_VERSION,
       rules: activeRules,
       paths: config.paths,
+      reportableFiles: files,
       ignore: config.ignore,
       failOn: config.failOn,
     });
     const cached = readScanCache(cacheDir);
-    const sortedFiles = [...files].sort();
-    const currentHashes = hashFiles(sortedFiles, cached?.fileHashes ?? null);
+    const inputs = collectCacheInputs(files);
+    const currentHashes = hashFiles(inputs.files, cached?.fileHashes ?? null);
 
     if (cached !== null && cacheCovers(cached, { unguardVersion: UNGUARD_VERSION, scanKey }, currentHashes)) {
       return finalizeScanResult(cached.diagnostics, cached.fileCount, config);
     }
 
     const concurrency = resolveDefaultConcurrency(config.concurrency);
-    const diagnostics = await analyzeFiles(files, activeRules, { concurrency });
+    const diagnostics = await analyzeFiles(files, activeRules, { concurrency, programCache: inputs.programCache });
     writeScanCache(cacheDir, {
-      version: 1,
+      version: CACHE_VERSION,
       unguardVersion: UNGUARD_VERSION,
       scanKey,
       fileHashes: currentHashes,

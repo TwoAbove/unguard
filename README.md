@@ -319,9 +319,10 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 | `unused-export` | warning | smell | Exported function, type, or constant with no usages in the project. Imports resolve through the checker (path aliases, workspace packages) and usage is merged across tsconfig groups, so an export consumed by a sibling monorepo package counts as used. Consumers outside the scanned tree, such as a published package's API surface, are invisible to the analysis - hence smell tier |
 | `optional-arg-always-used` | warning | smell | Optional param provided at every call site -- make it required |
 | `optional-arg-never-used` | warning | smell | Optional param never provided at any call site -- remove it, inline the default |
-| `constant-argument` | warning | smell | Parameter receives the same literal at every call site -- inline the value |
+| `constant-argument` | warning | smell | Parameter receives the same literal at every call site across scanned tsconfig groups -- inline the value |
 | `explicit-null-arg` | warning | smell | `fn(null)` / `fn(undefined)` passed to a project function -- the parameter invites nullish values; redesign it so callers can omit the argument |
-| `dead-overload` | warning | smell | Overload signature with zero matching project call sites |
+| `dead-overload` | warning | smell | Overload signature with zero matching call sites across scanned tsconfig groups |
+
 
 ### Imports
 
@@ -379,14 +380,17 @@ for (const d of execution.visibleDiagnostics) {
 
 ### Caching
 
-unguard caches scan results under `node_modules/.cache/unguard/`. On a warm
-run, if every file's content hash and the active rule set are unchanged,
-unguard returns cached diagnostics without building a TypeScript program.
+unguard caches scan results under `node_modules/.cache/unguard/`. Before reusing
+results, it refreshes project membership and module resolution, then checks
+reportable files, semantic dependency hashes, and scan policy. Cache hits skip
+type-checker and rule analysis, but still parse project inputs to resolve dependencies.
 The cache invalidates automatically on:
 
-- file content changes (mtime-only changes are ignored - `git checkout` and `git stash` stay cache hits)
+- content changes in scanned files, project-context files, and imported declarations (mtime-only changes are ignored)
+- added or removed project inputs, including changes to inherited `include` patterns
+- changes to tsconfig, extended configurations, or package-resolution metadata
 - changes to active rules or rule severities
-- changes to scan paths, ignore globs, or `failOn`
+- changes to reportable files (including `.gitignore` effects), scan paths, ignore globs, or `failOn`
 - unguard version upgrades
 
 Disable with `--no-cache` (CLI), `cache: false` (config), or pass

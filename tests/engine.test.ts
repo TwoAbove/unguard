@@ -293,6 +293,79 @@ describe("cross-group usage merge", () => {
     });
     expect(result.diagnostics[0]?.message).toContain("trulyUnused");
   });
+
+  it("uses sibling-project calls before concluding an argument is constant", async () => {
+    const root = new URL("./fixtures/cross-group-constant-argument/", import.meta.url).pathname;
+    const result = await scan({
+      paths: [root],
+      rules: ["constant-argument"],
+      cache: false,
+      concurrency: 1,
+    });
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("combines constant callers across groups without counting overlapping files twice", async () => {
+    const root = new URL("./fixtures/cross-group-constant-callers/", import.meta.url).pathname;
+    const result = await scan({
+      paths: [root],
+      rules: ["constant-argument"],
+      cache: false,
+      concurrency: 1,
+    });
+    expect(result.diagnostics).toMatchObject([
+      { ruleId: "constant-argument", file: `${root}shared/prompt.ts`, line: 1 },
+    ]);
+  });
+
+  it("keeps aggregated constant-argument reports within the requested files", async () => {
+    const consumer = new URL("./fixtures/cross-group-constant-callers/consumer/main.ts", import.meta.url).pathname;
+    const result = await scan({
+      paths: [consumer],
+      rules: ["constant-argument"],
+      cache: false,
+      concurrency: 1,
+    });
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("uses sibling-project evidence for optional parameters and overloads", async () => {
+    const root = new URL("./fixtures/cross-group-signature-usage/", import.meta.url).pathname;
+    const result = await scan({
+      paths: [root],
+      rules: ["optional-arg-always-used", "optional-arg-never-used", "dead-overload"],
+      cache: false,
+      concurrency: 1,
+    });
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("counts distinct optional-argument callers across overlapping projects", async () => {
+    const root = new URL("./fixtures/cross-group-signature-thresholds/", import.meta.url).pathname;
+    const result = await scan({
+      paths: [root],
+      rules: ["optional-arg-always-used", "optional-arg-never-used"],
+      cache: false,
+      concurrency: 1,
+    });
+    expect(result.diagnostics).toMatchObject([
+      { ruleId: "optional-arg-always-used", file: `${root}shared/prompt.ts`, line: 1 },
+      { ruleId: "optional-arg-never-used", file: `${root}shared/prompt.ts`, line: 6 },
+    ]);
+  });
+
+  it("merges inherited signature constraints without excluding unrelated derived methods", async () => {
+    const root = new URL("./fixtures/cross-group-inherited-contracts/", import.meta.url).pathname;
+    const result = await scan({
+      paths: [root],
+      rules: ["constant-argument", "optional-arg-always-used", "optional-arg-never-used"],
+      cache: false,
+      concurrency: 1,
+    });
+    expect(result.diagnostics).toMatchObject([
+      { ruleId: "constant-argument", file: `${root}consumer/main.ts`, line: 7 },
+    ]);
+  });
 });
 
 describe("cache", () => {
@@ -302,6 +375,7 @@ describe("cache", () => {
     const baseInput = {
       unguardVersion: "test",
       paths: ["src"],
+      reportableFiles: ["src/index.ts"],
       ignore: [],
       failOn: "info",
     };

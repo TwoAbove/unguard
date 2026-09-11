@@ -55,7 +55,7 @@ describe("project graph queries", () => {
 
     expect(signatures).toHaveLength(3);
     expect(signatures.map((signature) => signature.hasBody)).toEqual([false, false, true]);
-    expect(call?.resolvedSignature).toBe(0);
+    expect(call?.resolvedSignature).toBe(signatures[0]?.id);
   });
 
   it("records every import form and resolves the imported file", () => {

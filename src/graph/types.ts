@@ -80,8 +80,6 @@ export interface FunctionFact {
   normalizedBodyLength: number;
   /** enclosing class name for methods */
   className: string | null;
-  /** method of a class with an `implements` clause */
-  implementsInterface: boolean;
   /** top-level statements of a block body; 1 for an expression-bodied arrow */
   statementCount: number;
   /** body (including nested functions) contains an if/switch/loop/try statement */
@@ -236,10 +234,10 @@ export interface CallFact {
   isNew: boolean;
   hasTypeArguments: boolean;
   /**
-   * Index into `overloads(callee)` of the signature the checker resolved
-   * this call to; null when the callee is not overloaded or resolution failed.
+   * Canonical source signature declaration selected by the checker, including
+   * declarations outside this graph's files; null when unavailable or external.
    */
-  resolvedSignature: number | null;
+  resolvedSignature: NodeId | null;
 }
 
 export interface SignatureFact {
@@ -399,6 +397,8 @@ export interface Graph {
   overloads(fn: NodeId): readonly SignatureFact[];
   /** All source function families, including methods outside functions() eligibility. */
   overloadFamilies(): Iterable<OverloadFamilyFact>;
+  /** Source callable declarations participating in inherited or implemented member contracts. */
+  signatureConstraints(): ReadonlySet<NodeId>;
   /**
    * Every identifier anywhere in the project that resolves (through import
    * aliases) to the canonical declaration `decl`, excluding declaration names and import bindings.
