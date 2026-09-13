@@ -185,6 +185,8 @@ export interface ObjectLiteralFact {
     name: string;
     site: Site;
     isCallbackArgument: boolean;
+    /** the nearest function-like node has an explicit return type annotation */
+    hasReturnTypeAnnotation: boolean;
   } | null;
   /** `PropertyAssignment` elements only, source order */
   properties: ObjectLiteralPropertyFact[];

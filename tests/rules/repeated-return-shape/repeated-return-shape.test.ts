@@ -10,4 +10,25 @@ describe("repeated-return-shape", () => {
   it("flags functions returning the same object shape", () => {
     assertCrossFileInvalid(repeatedReturnShape, new URL("./invalid", import.meta.url).pathname);
   });
+
+  it("allows explicit return contracts with methods, optional members, and union branches", () => {
+    assertCrossFileValid(
+      repeatedReturnShape,
+      new URL("./explicit-annotations", import.meta.url).pathname,
+    );
+  });
+
+  it("does not count annotated functions toward the repetition threshold", () => {
+    assertCrossFileValid(
+      repeatedReturnShape,
+      new URL("./annotation-threshold", import.meta.url).pathname,
+    );
+  });
+
+  it("reports unannotated nested functions despite annotated enclosing functions", () => {
+    assertCrossFileInvalid(
+      repeatedReturnShape,
+      new URL("./nearest-function", import.meta.url).pathname,
+    );
+  });
 });

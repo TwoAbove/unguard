@@ -32,7 +32,8 @@ export const repeatedReturnShape: CrossFileRule = {
         literal.propertyNames === null ||
         literal.propertyNames.length < 2 ||
         enclosingFunction === null ||
-        enclosingFunction.isCallbackArgument
+        enclosingFunction.isCallbackArgument ||
+        enclosingFunction.hasReturnTypeAnnotation
       ) {
         continue;
       }

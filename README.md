@@ -299,7 +299,7 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 | `optional-param-coerced-in-body` | warning | finding | Optional param forced non-optional in the body (`x = x ?? def`, `x ??= def`, or `if (!x) throw`) |
 | `no-defaulted-required-port-arg` | warning | finding | `class C implements I { method(arg = x) }` where `I.method(arg)` is required -- the implementation quietly makes a required argument optional |
 | `repeated-literal-property` | warning | smell | Same literal value repeated across object properties -- likely a missed constant |
-| `repeated-return-shape` | warning | smell | Multiple functions return object literals with the same property names -- extract a shared return type |
+| `repeated-return-shape` | warning | smell | Multiple functions without explicit return type annotations return object literals with the same property names -- extract a shared return type |
 | `trivial-type-alias` | info | smell | `type Foo = Bar;` -- a second name for an existing type with no change (info: an alias marking a domain boundary is often deliberate) |
 
 ### Cross-file analysis

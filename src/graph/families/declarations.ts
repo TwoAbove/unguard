@@ -442,6 +442,7 @@ function enclosingFunctionFact(
     name: deriveFunctionName(enclosing, sourceFile),
     site: siteOf(enclosing, sourceFile),
     isCallbackArgument: isCallbackArgument(enclosing),
+    hasReturnTypeAnnotation: enclosing.type !== undefined,
   };
 }
 
