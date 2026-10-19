@@ -12,11 +12,15 @@ import { duplicateTypeDeclaration } from "./cross-file/duplicate-type-declaratio
 import { duplicateTypeName } from "./cross-file/duplicate-type-name.ts";
 import { explicitNullArg } from "./cross-file/explicit-null-arg.ts";
 import { nearDuplicateFunction } from "./cross-file/near-duplicate-function.ts";
+import { nearDuplicateObject } from "./cross-file/near-duplicate-object.ts";
+import { nullableParamNeverNull } from "./cross-file/nullable-param-never-null.ts";
+import { nullableReturnAlwaysAsserted } from "./cross-file/nullable-return-always-asserted.ts";
 import { optionalArgAlwaysUsed } from "./cross-file/optional-arg-always-used.ts";
 import { optionalArgNeverUsed } from "./cross-file/optional-arg-never-used.ts";
 import { repeatedLiteralProperty } from "./cross-file/repeated-literal-property.ts";
 import { repeatedReturnShape } from "./cross-file/repeated-return-shape.ts";
 import { trivialWrapper } from "./cross-file/trivial-wrapper.ts";
+import { returnValueNeverUsed } from "./cross-file/return-value-never-used.ts";
 import { unusedExport } from "./cross-file/unused-export.ts";
 import { noAnyCast } from "./ts/no-any-cast.ts";
 import { noAwaitCoalesce } from "./ts/no-await-coalesce.ts";
@@ -120,6 +124,9 @@ export const allRules: Rule[] = [
   optionalArgAlwaysUsed,
   optionalArgNeverUsed,
   constantArgument,
+  nullableParamNeverNull,
+  nullableReturnAlwaysAsserted,
+  returnValueNeverUsed,
   noErrorRewrap,
   noSwallowedCatch,
   explicitNullArg,
@@ -128,6 +135,7 @@ export const allRules: Rule[] = [
   duplicateConstantDeclaration,
   noDynamicImport,
   nearDuplicateFunction,
+  nearDuplicateObject,
   trivialWrapper,
   unusedExport,
   duplicateFile,
@@ -195,11 +203,16 @@ const ruleMetadata: Record<string, RuleMetadata> = {
   "optional-arg-never-used": { category: "cross-file", tags: ["api"], tier: "smell" },
   "constant-argument": { category: "cross-file", tags: ["api"], tier: "smell" },
   "explicit-null-arg": { category: "cross-file", tags: ["api"], tier: "smell" },
+  // Callers outside the scanned tree, or a contract meant to outlive today's callers, are invisible here.
+  "nullable-param-never-null": { category: "cross-file", tags: ["api", "type-aware"], tier: "smell" },
+  "nullable-return-always-asserted": { category: "cross-file", tags: ["api", "type-aware"], tier: "smell" },
+  "return-value-never-used": { category: "cross-file", tags: ["api", "type-aware"], tier: "smell" },
 
   // Code-splitting and lazy loading are legitimate dynamic imports.
   "no-dynamic-import": { category: "imports", tags: ["safety"], tier: "smell" },
 
   "near-duplicate-function": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
+  "near-duplicate-object": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
   "trivial-wrapper": { category: "cross-file", tags: ["duplicate"], tier: "smell" },
   // Convention-driven and reflective usage is invisible to import analysis.
   "unused-export": { category: "cross-file", tags: ["api"], tier: "smell" },

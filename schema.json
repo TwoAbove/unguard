@@ -18,7 +18,7 @@
       "items": { "type": "string" }
     },
     "rules": {
-      "description": "Rule severity overrides. Keys are selectors (rule id, wildcard, category:<name>, tag:<name>, confidence:<proven|heuristic>).",
+      "description": "Rule severity overrides. Keys are selectors (rule id, wildcard, category:<name>, tag:<name>, tier:<finding|smell>).",
       "type": "object",
       "additionalProperties": {
         "enum": ["off", "info", "warning", "error"]
@@ -50,14 +50,6 @@
       "description": "Exit threshold. Process exits non-zero when diagnostics meet this severity.",
       "enum": ["none", "info", "warning", "error"],
       "default": "info"
-    },
-    "severity": {
-      "description": "Filter output to these severity levels.",
-      "type": "array",
-      "items": {
-        "enum": ["info", "warning", "error"]
-      },
-      "uniqueItems": true
     },
     "concurrency": {
       "description": "Maximum worker threads used to analyze tsconfig groups in parallel. Auto by default; set to 1 to disable.",

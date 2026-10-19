@@ -161,6 +161,21 @@ export interface ObjectLiteralPropertyFact {
   isAsConst: boolean;
 }
 
+/** Checker-backed object template; references are normalized by symbol identity. */
+export interface ObjectLiteralTemplateFact extends ObjectLiteralFact {
+  template: {
+    fingerprint: string;
+    /** Visited AST nodes; each interpolated template is one literal hole. */
+    size: number;
+    functionMembers: number;
+    /** Visited nodes within immediate function-member bodies, including body roots. */
+    functionBodySize: number;
+    accessCallCount: number;
+    freeDeclarations: string[];
+    literals: string[];
+  };
+}
+
 export interface ObjectLiteralFact {
   /** id of the `ObjectLiteralExpression` */
   id: NodeId;
@@ -222,6 +237,13 @@ export type ArgShape =
   | { kind: "identifier"; decl: NodeId | null }
   | { kind: "other" };
 
+export type ResultUse =
+  /** expression statement (through `await`/`void`) whose awaited value carries data */
+  | "discarded"
+  /** nullable value asserted with `!`, or thrown on or `asserts`-checked in the next statement */
+  | "asserted-present"
+  | "other";
+
 export interface CallFact {
   /** id of the `CallExpression` / `NewExpression` */
   id: NodeId;
@@ -240,6 +262,10 @@ export interface CallFact {
    * declarations outside this graph's files; null when unavailable or external.
    */
   resolvedSignature: NodeId | null;
+  /** empty when `callee` is null */
+  nullableArgs: boolean[];
+  /** "other" when `callee` is null */
+  resultUse: ResultUse;
 }
 
 export interface SignatureFact {
@@ -392,6 +418,8 @@ export interface Graph {
   exports(): readonly ExportFact[];
 
   // References (checker required)
+  /** Resolved whole-literal templates; omits unresolved identities, requires a checker. */
+  objectLiteralTemplates(): readonly ObjectLiteralTemplateFact[];
   calls(): readonly CallFact[];
   /** calls whose `callee` is `fn` */
   callers(fn: NodeId): readonly CallFact[];
@@ -406,6 +434,10 @@ export interface Graph {
    * aliases) to the canonical declaration `decl`, excluding declaration names and import bindings.
    */
   readers(decl: NodeId): readonly ReaderFact[];
+  /** functions whose calls are not all of their uses: read as a value, or members of an object literal that is */
+  valueReferencedFunctions(): ReadonlySet<NodeId>;
+  /** parameters whose type annotation admits null or undefined */
+  nullableParameters(): ReadonlySet<NodeId>;
 
   // Presence (checker required)
   presence(): PresenceFacts;

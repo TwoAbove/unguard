@@ -1,4 +1,4 @@
-import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup, withSite } from "../types.ts";
 
 export const duplicateFunctionName: CrossFileRule = {
   id: "duplicate-function-name",
@@ -30,12 +30,7 @@ export const duplicateFunctionName: CrossFileRule = {
       });
       if (hasImportLink) continue;
 
-      const entries = group.map((entry) => ({
-        ...entry,
-        file: entry.site.file,
-        line: entry.site.line,
-        column: entry.site.column,
-      }));
+      const entries = group.map(withSite);
       reportDuplicateGroup(entries, this.id, this.severity,
         (e) => `${e.file}:${e.line}`,
         (e, others) => `Exported function "${e.name}" also defined in: ${others}`,

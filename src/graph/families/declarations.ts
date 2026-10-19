@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as ts from "typescript";
-import { asSignatureLike, isInlineParamType, type SignatureLike } from "../../typecheck/utils.ts";
+import { findEnclosingFunction, isInlineParamType, type SignatureLike } from "../../typecheck/utils.ts";
 import {
   analyzeFunctionBody,
   type FunctionBodyAnalysis,
@@ -10,7 +10,7 @@ import {
   normalizeText,
   stripCommentsAndWhitespace,
 } from "../../utils/hash.ts";
-import { nodeId, type GraphInput } from "../graph.ts";
+import { nodeId, siteOf, type GraphInput } from "../graph.ts";
 import type { StatementBlock } from "../statement-sequences.ts";
 import type {
   ConstantFact,
@@ -20,7 +20,6 @@ import type {
   ObjectLiteralFact,
   ObjectLiteralPropertyFact,
   ParamFact,
-  Site,
   TypeFact,
 } from "../types.ts";
 
@@ -274,8 +273,8 @@ function isBranchingStatement(node: ts.Node): boolean {
   );
 }
 
-function isAssignmentOnly(body: ts.ConciseBody | undefined): boolean {
-  if (body === undefined || !ts.isBlock(body) || body.statements.length !== 1) return false;
+function isAssignmentOnly(body: ts.ConciseBody): boolean {
+  if (!ts.isBlock(body) || body.statements.length !== 1) return false;
   const statement = body.statements[0];
   return (
     statement !== undefined &&
@@ -285,8 +284,7 @@ function isAssignmentOnly(body: ts.ConciseBody | undefined): boolean {
   );
 }
 
-function findSoleCall(body: ts.ConciseBody | undefined, sourceFile: ts.SourceFile): string | null {
-  if (body === undefined) return null;
+function findSoleCall(body: ts.ConciseBody, sourceFile: ts.SourceFile): string | null {
   let call: ts.CallExpression | undefined;
   if (ts.isCallExpression(body)) {
     call = body;
@@ -433,7 +431,7 @@ function extractLiteral(
 }
 
 function enclosingFunctionFact(
-  enclosing: SignatureLike | null,
+  enclosing: ts.FunctionLikeDeclaration | null,
   sourceFile: ts.SourceFile,
 ): ObjectLiteralFact["enclosingFunction"] {
   if (enclosing === null) return null;
@@ -446,17 +444,7 @@ function enclosingFunctionFact(
   };
 }
 
-function findEnclosingFunction(node: ts.Node): SignatureLike | null {
-  let current: ts.Node | undefined = node.parent;
-  while (current !== undefined) {
-    const fn = asSignatureLike(current);
-    if (fn !== null) return fn;
-    current = current.parent;
-  }
-  return null;
-}
-
-function isReturnValue(node: ts.ObjectLiteralExpression, enclosing: SignatureLike | null): boolean {
+function isReturnValue(node: ts.ObjectLiteralExpression, enclosing: ts.FunctionLikeDeclaration | null): boolean {
   if (enclosing === null) return false;
   let current: ts.Node = node;
   while (
@@ -472,9 +460,12 @@ function isReturnValue(node: ts.ObjectLiteralExpression, enclosing: SignatureLik
   return findEnclosingFunction(parent) === enclosing;
 }
 
-function deriveFunctionName(node: SignatureLike, sourceFile: ts.SourceFile): string {
+function deriveFunctionName(node: ts.FunctionLikeDeclaration, sourceFile: ts.SourceFile): string {
   if (ts.isFunctionDeclaration(node) && node.name !== undefined) return node.name.text;
-  if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+  if (
+    (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) &&
+    ts.isIdentifier(node.name)
+  ) {
     const parent = node.parent;
     if (ts.isClassDeclaration(parent) && parent.name !== undefined) {
       return `${parent.name.text}.${node.name.text}`;
@@ -516,7 +507,7 @@ function deriveAnonymousName(
   return `<anonymous>:${line}`;
 }
 
-function isCallbackArgument(node: SignatureLike): boolean {
+function isCallbackArgument(node: ts.FunctionLikeDeclaration): boolean {
   let current: ts.Node = node;
   while (ts.isParenthesizedExpression(current.parent)) current = current.parent;
   const parent = current.parent;
@@ -557,18 +548,6 @@ function isConstantValue(node: ts.Node): boolean {
   }
   if (ts.isPrefixUnaryExpression(node)) return isConstantValue(node.operand);
   return ts.isBinaryExpression(node) && isConstantValue(node.left) && isConstantValue(node.right);
-}
-
-function siteOf(node: ts.Node, sourceFile: ts.SourceFile): Site {
-  const start = node.getStart(sourceFile);
-  const position = ts.getLineAndCharacterOfPosition(sourceFile, start);
-  return {
-    file: sourceFile.fileName,
-    line: position.line + 1,
-    column: position.character + 1,
-    start,
-    end: node.getEnd(),
-  };
 }
 
 function staticPropertyName(name: ts.PropertyName, sourceFile: ts.SourceFile): string | null {

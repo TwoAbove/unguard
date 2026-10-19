@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
-import { isNullishLiteral, splitEqualityOperands } from "../../typecheck/utils.ts";
+import { findEnclosingFunction, isNullishLiteral, splitEqualityOperands } from "../../typecheck/utils.ts";
 
 /**
  * Fires when a function returns a variable that was bound via array destructure
@@ -61,22 +61,6 @@ export const returnTypeWidensViaDestructure: TSRule = {
     ctx.report(node);
   },
 };
-
-function findEnclosingFunction(node: ts.Node): ts.SignatureDeclaration | null {
-  let current: ts.Node | undefined = node.parent;
-  while (current) {
-    if (
-      ts.isFunctionDeclaration(current) ||
-      ts.isFunctionExpression(current) ||
-      ts.isArrowFunction(current) ||
-      ts.isMethodDeclaration(current)
-    ) {
-      return current;
-    }
-    current = current.parent;
-  }
-  return null;
-}
 
 function unwrapPromise(type: ts.Type, ctx: TSVisitContext): ts.Type {
   const awaited = ctx.semantics.awaitedType(type);

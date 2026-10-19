@@ -3,6 +3,7 @@ import type { SemanticServices } from "../rules/types.ts";
 import { SemanticCache } from "../typecheck/semantic-cache.ts";
 import { buildDeclarations, type DeclarationFacts } from "./families/declarations.ts";
 import { buildReferences, type ReferenceFacts } from "./families/references.ts";
+import { buildObjectLiteralTemplates } from "./families/object-templates.ts";
 import { buildPresence } from "./presence.ts";
 import { findMaximalMatches } from "./statement-sequences.ts";
 import type {
@@ -19,10 +20,12 @@ import type {
   MaximalMatch,
   NodeId,
   ObjectLiteralFact,
+  ObjectLiteralTemplateFact,
   OverloadFamilyFact,
   PresenceFacts,
   ReaderFact,
   SignatureFact,
+  Site,
   TypeFact,
 } from "./types.ts";
 
@@ -71,6 +74,19 @@ export function nodeId(node: ts.Node, sourceFile: ts.SourceFile): NodeId {
   return `${sourceFile.fileName}:${node.getStart(sourceFile)}-${node.getEnd()}`;
 }
 
+/** Source span and 1-based location shared by graph facts. */
+export function siteOf(node: ts.Node, sourceFile: ts.SourceFile): Site {
+  const start = node.getStart(sourceFile);
+  const location = sourceFile.getLineAndCharacterOfPosition(start);
+  return {
+    file: sourceFile.fileName,
+    line: location.line + 1,
+    column: location.character + 1,
+    start,
+    end: node.getEnd(),
+  };
+}
+
 class ProjectGraph implements Graph {
   readonly fileNames: readonly string[];
   readonly hasTypeInfo: boolean;
@@ -78,6 +94,7 @@ class ProjectGraph implements Graph {
   private declarationFacts: DeclarationFacts | undefined;
   private referenceFacts: ReferenceFacts | undefined;
   private presenceFacts: PresenceFacts | undefined;
+  private objectTemplateFacts: ObjectLiteralTemplateFact[] | undefined;
   private duplicateCache = new Map<DuplicateKind, unknown[][]>();
   private callersIndex: Map<NodeId, CallFact[]> | undefined;
   private importersIndex: Map<string, ImportFact[]> | undefined;
@@ -116,6 +133,21 @@ class ProjectGraph implements Graph {
 
   objectLiterals(): readonly ObjectLiteralFact[] {
     return this.decls().objectLiterals;
+  }
+
+  objectLiteralTemplates(): readonly ObjectLiteralTemplateFact[] {
+    const checker = this.input.checker;
+    if (checker === undefined) {
+      throw new Error("objectLiteralTemplates requires type information");
+    }
+    if (this.objectTemplateFacts === undefined) {
+      this.objectTemplateFacts = buildObjectLiteralTemplates(
+        this.input.sourceFiles,
+        checker,
+        this.objectLiterals(),
+      );
+    }
+    return this.objectTemplateFacts;
   }
 
   duplicateGroups<K extends DuplicateKind>(kind: K): DuplicateFactOf[K][][] {
@@ -249,6 +281,16 @@ class ProjectGraph implements Graph {
   readers(decl: NodeId): readonly ReaderFact[] {
     this.requireTypeInfo("readers");
     return this.refs().readers.get(decl) ?? [];
+  }
+
+  valueReferencedFunctions(): ReadonlySet<NodeId> {
+    this.requireTypeInfo("valueReferencedFunctions");
+    return this.refs().valueReferencedFunctions;
+  }
+
+  nullableParameters(): ReadonlySet<NodeId> {
+    this.requireTypeInfo("nullableParameters");
+    return this.refs().nullableParameters;
   }
 
   // -- Presence -------------------------------------------------------------

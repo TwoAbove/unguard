@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
-import { isUncheckedIndexRead } from "../../typecheck/utils.ts";
+import { isUncheckedIndexRead, replaceNodeWithNode } from "../../typecheck/utils.ts";
 
 export const noNullishCoalescing: TSRule = {
   kind: "ts",
@@ -18,11 +18,7 @@ export const noNullishCoalescing: TSRule = {
     // checker says otherwise (noUncheckedIndexedAccess off) — the fallback is real.
     if (isUncheckedIndexRead(node.left, ctx.semantics, ctx.compilerOptions)) return;
     if (ctx.isNullable(node.left)) return;
-    ctx.report(node, undefined, {
-      start: node.getStart(ctx.sourceFile),
-      end: node.getEnd(),
-      text: node.left.getText(ctx.sourceFile),
-    });
+    ctx.report(node, undefined, replaceNodeWithNode(node, node.left, ctx.sourceFile));
   },
 };
 

@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { SemanticServices } from "../rules/types.ts";
-import { includesUndefined, isFromNodeModules } from "../typecheck/utils.ts";
+import { findEnclosingFunction, includesUndefined, isFromNodeModules, unwrapParens } from "../typecheck/utils.ts";
 import { nodeId, type GraphInput } from "./graph.ts";
 import type { PresenceFacts } from "./types.ts";
 
@@ -339,8 +339,8 @@ function handleParameter(node: ts.ParameterDeclaration, semantics: SemanticServi
 
 function handleReturn(node: ts.ReturnStatement, semantics: SemanticServices, presence: PresenceFacts): void {
   if (node.expression === undefined) return;
-  const fn = enclosingFunction(node);
-  if (fn === undefined || fn.type === undefined) return;
+  const fn = findEnclosingFunction(node);
+  if (fn === null || fn.type === undefined) return;
   flowReturnExpression(node.expression, fn.type, node, semantics, presence);
 }
 
@@ -627,15 +627,6 @@ function hasRestElement(name: ts.BindingName): boolean {
   return name.elements.some((element) => element.dotDotDotToken !== undefined);
 }
 
-function enclosingFunction(node: ts.Node): ts.FunctionLikeDeclaration | undefined {
-  let current: ts.Node | undefined = node.parent;
-  while (current !== undefined) {
-    if (ts.isFunctionLike(current)) return current as ts.FunctionLikeDeclaration;
-    current = current.parent;
-  }
-  return undefined;
-}
-
 interface Laundering {
   /** property name being conditionally included */
   key: string;
@@ -691,12 +682,6 @@ function undefinedComparisonSubject(test: ts.BinaryExpression): ts.Expression | 
   if (ts.isIdentifier(test.right) && test.right.text === "undefined") return test.left;
   if (ts.isIdentifier(test.left) && test.left.text === "undefined") return test.right;
   return null;
-}
-
-function unwrapParens(node: ts.Expression): ts.Expression {
-  let current = node;
-  while (ts.isParenthesizedExpression(current)) current = current.expression;
-  return current;
 }
 
 function normalize(text: string): string {

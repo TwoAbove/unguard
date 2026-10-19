@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
-import { isPromiseLike } from "../../typecheck/utils.ts";
+import { isPromiseLike, replaceNodeWithNode } from "../../typecheck/utils.ts";
 
 /**
  * `await` on a value whose type has no `then` method is a dead keyword: it
@@ -21,10 +21,6 @@ export const noUselessAwait: TSRule = {
     if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Instantiable)) return;
     if (isPromiseLike(type, ctx.semantics)) return;
 
-    ctx.report(node, undefined, {
-      start: node.getStart(ctx.sourceFile),
-      end: node.getEnd(),
-      text: node.expression.getText(ctx.sourceFile),
-    });
+    ctx.report(node, undefined, replaceNodeWithNode(node, node.expression, ctx.sourceFile));
   },
 };

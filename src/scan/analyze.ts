@@ -50,23 +50,24 @@ export interface GroupAnalysisResult {
   globalFacts: Record<string, unknown>;
 }
 
+/** A group's result plus the type-checked program and graph, so a caller can analyze further without checking the group again. */
+export interface GroupAnalysis extends GroupAnalysisResult {
+  program: ts.Program;
+  graph: Graph;
+}
+
 function runGroupsSerial(
   groupConfigs: ProgramGroupConfig[],
   tsRules: TSRule[],
   crossFileRules: CrossFileRule[],
   programCache = createProgramBuildCache(),
 ): Diagnostic[] {
-  const allDiagnostics: Diagnostic[] = [];
-  const factsByRule = new Map<string, unknown[]>();
-
-  for (const groupConfig of groupConfigs) {
-    const result = analyzeGroup(groupConfig, tsRules, crossFileRules, programCache);
-    allDiagnostics.push(...result.diagnostics);
-    addGroupFacts(factsByRule, result.globalFacts);
-  }
-
-  allDiagnostics.push(...annotateGlobalDiagnostics(mergeGlobalRuleDiagnostics(crossFileRules, factsByRule)));
-  return dedupeDiagnostics(allDiagnostics);
+  const results = groupConfigs.map((groupConfig): GroupAnalysisResult => {
+    // Only the results are kept: holding every group's program at once would multiply peak memory.
+    const { diagnostics, globalFacts } = analyzeGroup(groupConfig, tsRules, crossFileRules, programCache);
+    return { diagnostics, globalFacts };
+  });
+  return mergeGroupResults(results, crossFileRules);
 }
 
 async function runGroupsViaWorkers(
@@ -76,16 +77,18 @@ async function runGroupsViaWorkers(
 ): Promise<Diagnostic[]> {
   const ruleSpecs = rules.map((rule) => ({ id: rule.id, severity: rule.severity }));
   const tasks: GroupTask[] = groupConfigs.map((groupConfig, idx) => ({ id: idx, groupConfig }));
+  const results = await runGroupsInWorkers(tasks, ruleSpecs, concurrency);
+  return mergeGroupResults(results, rules.filter((r): r is CrossFileRule => !isTSRule(r)));
+}
 
-  const resultsByTask = await runGroupsInWorkers(tasks, ruleSpecs, concurrency);
+/** Join per-group results, judging the rules that merge facts across groups. */
+export function mergeGroupResults(results: readonly GroupAnalysisResult[], crossFileRules: CrossFileRule[]): Diagnostic[] {
   const allDiagnostics: Diagnostic[] = [];
   const factsByRule = new Map<string, unknown[]>();
-  for (const result of resultsByTask) {
+  for (const result of results) {
     allDiagnostics.push(...result.diagnostics);
     addGroupFacts(factsByRule, result.globalFacts);
   }
-
-  const crossFileRules = rules.filter((r): r is CrossFileRule => !isTSRule(r));
   allDiagnostics.push(...annotateGlobalDiagnostics(mergeGlobalRuleDiagnostics(crossFileRules, factsByRule)));
   return dedupeDiagnostics(allDiagnostics);
 }
@@ -139,7 +142,7 @@ export function analyzeGroup(
   tsRules: TSRule[],
   crossFileRules: CrossFileRule[],
   programCache?: ReturnType<typeof createProgramBuildCache>,
-): GroupAnalysisResult {
+): GroupAnalysis {
   const program = createProgramForGroup(groupConfig, { expandProjectFiles: true, cache: programCache });
   const allowed = new Set(groupConfig.scanFiles);
   const collectFiles = crossFileRules.length > 0
@@ -160,7 +163,7 @@ export function analyzeGroup(
   const fileData = new Map<string, FileDiagnosticData>();
   addFileData(fileData, program, allowed);
 
-  return { diagnostics: finalizeDiagnostics(groupDiagnostics, fileData), globalFacts };
+  return { diagnostics: finalizeDiagnostics(groupDiagnostics, fileData), globalFacts, program, graph };
 }
 
 /**

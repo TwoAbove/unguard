@@ -1,5 +1,34 @@
-import type { CallFact, Graph, NodeId, ParamFact, Site } from "../../graph/types.ts";
-import type { CrossFileAnalysisContext } from "../types.ts";
+import type { CallFact, Graph, NodeId, ParamFact, ResultUse, Site } from "../../graph/types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, diagnosticAtSite } from "../types.ts";
+
+export interface Finding {
+  site: Site;
+  message: string;
+}
+
+export function callerRule<F>(spec: {
+  id: string;
+  message: string;
+  collect(graph: Graph, context?: CrossFileAnalysisContext): F;
+  judge(factsList: F[]): Iterable<Finding>;
+}): CrossFileRule {
+  return {
+    id: spec.id,
+    severity: "warning",
+    message: spec.message,
+    collectGlobalFacts: spec.collect,
+    finalizeGlobal(facts: unknown[]): Diagnostic[] {
+      return report(this, spec.judge(facts as F[]));
+    },
+    analyze(graph, context): Diagnostic[] {
+      return report(this, spec.judge([spec.collect(graph, context)]));
+    },
+  };
+}
+
+function report(rule: CrossFileRule, findings: Iterable<Finding>): Diagnostic[] {
+  return Array.from(findings, ({ site, message }) => diagnosticAtSite(rule, site, message));
+}
 
 export interface FunctionCandidate {
   id: NodeId;
@@ -7,7 +36,7 @@ export interface FunctionCandidate {
   params: ParamFact[];
 }
 
-export type CallEvidence = Pick<CallFact, "id" | "callee" | "args" | "resolvedSignature">;
+export type CallEvidence = Pick<CallFact, "id" | "callee" | "args" | "resolvedSignature" | "nullableArgs" | "resultUse">;
 
 export interface CallerFacts {
   calls: CallEvidence[];
@@ -21,8 +50,8 @@ export interface FunctionCallerFacts extends CallerFacts {
 export function collectCallerFacts(graph: Graph): CallerFacts {
   // A sibling project can contribute calls and contracts for declarations it does not own.
   return {
-    calls: graph.calls().map(({ id, callee, args, resolvedSignature }) => ({
-      id, callee, args, resolvedSignature,
+    calls: graph.calls().map(({ id, callee, args, resolvedSignature, nullableArgs, resultUse }) => ({
+      id, callee, args, resolvedSignature, nullableArgs, resultUse,
     })),
     signatureConstraints: [...graph.signatureConstraints()],
   };
@@ -39,6 +68,34 @@ export function collectFunctionCallerFacts(
     candidates.push({ id: fn.id, site: fn.site, params: fn.params });
   }
   return { candidates, ...collectCallerFacts(graph) };
+}
+
+export interface VisibleCallerFacts extends FunctionCallerFacts {
+  valueReferenced: NodeId[];
+}
+
+export function collectVisibleCallerFacts(
+  graph: Graph,
+  context: CrossFileAnalysisContext | undefined,
+): VisibleCallerFacts {
+  return { ...collectFunctionCallerFacts(graph, context), valueReferenced: [...graph.valueReferencedFunctions()] };
+}
+
+export function* mergeVisibleCallerFacts(factsList: readonly VisibleCallerFacts[]) {
+  const referenced = new Set(factsList.flatMap((facts) => facts.valueReferenced));
+  for (const entry of mergeCallerFacts(factsList)) {
+    if (!referenced.has(entry.candidate.id)) yield entry;
+  }
+}
+
+export function everyCallSite(use: ResultUse, describe: (sites: number) => string) {
+  return function* judge(factsList: VisibleCallerFacts[]): Iterable<Finding> {
+    for (const { candidate, evidence } of mergeVisibleCallerFacts(factsList)) {
+      if (evidence.sites.size >= 2 && evidence.observations.every((call) => call.resultUse === use)) {
+        yield { site: candidate.site, message: describe(evidence.sites.size) };
+      }
+    }
+  };
 }
 
 export function* mergeCallerFacts<T extends { id: NodeId }>(

@@ -1,4 +1,4 @@
-import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup, withSite } from "../types.ts";
 
 export const duplicateTypeDeclaration: CrossFileRule = {
   id: "duplicate-type-declaration",
@@ -11,12 +11,7 @@ export const duplicateTypeDeclaration: CrossFileRule = {
     for (const group of graph.duplicateGroups("type")) {
       if (new Set(group.map((entry) => entry.site.file)).size < 2) continue;
       if (group.every((entry) => entry.memberCount <= 1 && entry.form !== "other")) continue;
-      const entries = group.map((entry) => ({
-        ...entry,
-        file: entry.site.file,
-        line: entry.site.line,
-        column: entry.site.column,
-      }));
+      const entries = group.map(withSite);
       reportDuplicateGroup(entries, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Type "${e.name}" has identical shape to: ${others}`,

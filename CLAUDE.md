@@ -5,15 +5,18 @@ Type-aware static analyzer that flags defensive coding patterns where types shou
 ## Commands
 
 ```bash
-npm run build          # tsup -> dist/
+npm run build          # tsdown -> dist/
 npm run lint:biome     # biome lint for source + tests (without fixtures)
 npm run test           # vitest run
 npm run test:watch     # vitest
-npm run typecheck      # tsc --noEmit
+npm run typecheck      # TypeScript 7 (tsc7 devDependency), noEmit
 npm run scan           # run unguard on src via unguard.config.json (fail-on=error)
+npm run smell          # run smell-tier rules on src (fail-on=warning); with build, test and scan, the prepublishOnly gate
 ```
 
-CLI: `node bin/unguard.mjs scan [paths] [--only <selector>] [--rule <selector=severity>] [--ignore <glob>] [--json] [--fail-on=<none|error|warning|info>] [--config <path>] [--concurrency <n>] [--no-baseline] [--no-cache]`
+CLI: `node bin/unguard.mjs [scan|smell|fix|baseline] [paths] [--only <selector>] [--rule <selector=severity>] [--ignore <glob>] [--json] [--fail-on=<none|error|warning|info>] [--config <path>] [--concurrency <n>] [--no-baseline] [--no-cache]`
+
+Rule-authoring aid (not in `--help`): `node bin/unguard.mjs graph <file>:<line>` prints the graph facts for the declaration at that line (readers, callers, overloads, importers, exports, duplicates).
 
 Rule tiers (`RuleTier` in `src/rules/index.ts`): every rule is a `finding` (the checker or graph demonstrates the report, so it demands a fix) or a `smell` (a correct alternative reading exists that the analysis cannot see, so a human must decide). `scan` runs finding-tier rules; the `smell` subcommand runs smell-tier rules with `--fail-on` defaulting to `none`, so it never gates unless asked to. An explicit rule selection (`--only`, `rules` option) bypasses the tiers.
 
@@ -21,7 +24,7 @@ Rule tiers (`RuleTier` in `src/rules/index.ts`): every rule is a `finding` (the 
 
 The `fix` subcommand applies `Diagnostic.fix` edits (only attached when provably semantics-preserving), then reports and exits on what remains.
 
-Config: `unguard.config.json` (auto-discovered) supports `paths`, `ignore`, `rules`, `overrides`, `failOn`.
+Config: `unguard.config.json` or `.unguardrc.json` (auto-discovered; `schema.json` describes it) supports `paths`, `ignore`, `rules`, `overrides`, `failOn`, `concurrency`, `cache`.
 Rule severity values: `off | info | warning | error`; selectors support:
 - exact id (`no-ts-ignore`)
 - wildcard (`duplicate-*`)
@@ -42,7 +45,7 @@ Pipeline is explicit and ordered:
 
 1. **Resolve config** (`src/scan/config.ts`) — merge defaults + caller options, normalize rule policy and thresholds.
 2. **Discover files** (`src/scan/discover.ts`) — expand targets, apply built-in/generated ignores, apply `.gitignore`.
-3. **Analyze** (`src/scan/analyze.ts`) — run TS + cross-file rules using one `ts.Program`.
+3. **Analyze** (`src/scan/analyze.ts`) — per tsconfig group (in worker threads when there are several; `src/scan/worker.ts`), build one `ts.Program` and one `Graph`, run the TS rules and cross-file rules on them; `mergeGroupResults` joins the groups and runs the cross-group `finalizeGlobal` hooks.
 4. **Classify/report policy** (`src/scan/policy.ts`) — resolve selector-based severities, output visibility, exit code.
 
 Orchestration entrypoints:
@@ -52,19 +55,22 @@ Orchestration entrypoints:
 Other key files:
 - `src/typecheck/program.ts` — tsconfig discovery, `ts.Program` creation
 - `src/typecheck/walk.ts` — TS AST walker, `TSVisitContext`, `runTSRules()`
-- `src/typecheck/utils.ts` — shared type helpers (`isNullableType`, `includesNumberType`, `isInlineParamType`, `isPromiseLike`, `libDeclaredSignature`, `reportCommentDirectives`, etc.)
+- `src/typecheck/utils.ts` — shared type helpers (`isNullableType`, `includesNumberType`, `isInlineParamType`, `isPromiseLike`, `libDeclaredSignature`, `reportCommentDirectives`, `findEnclosingFunction`, `replaceNodeWithNode`, etc.)
 - `src/scan/baseline.ts` — baseline load/build/apply (`unguard.baseline.json`)
-- `src/rules/cross-file/object-shape.ts` — shared helpers for object literal shape analysis (`extractPropertyNames`, `getShapeGroup`)
-- `src/collect/index.ts` — `collectProject(program)`, builds `ProjectIndex` (types, functions, constants, callSites, imports, fileHashes, statementSequences, inlineParamTypes)
-- `src/collect/base-registry.ts` — `BaseRegistry<T>` and `DualHashRegistry<T>` base classes
+- `src/graph/graph.ts` — `buildGraph(program)` / `buildSourceOnlyGraph(files)`: the lazily built project `Graph` every cross-file rule reads; `siteOf`, `nodeId`
+- `src/graph/types.ts` — the `Graph` interface and its facts (functions, types, constants, object literals, imports/exports, calls with per-argument nullability and how each result is used, readers, overloads, presence)
+- `src/graph/families/` — fact builders: `declarations.ts`, `references.ts` (calls, readers, value-referenced functions, nullable parameters), `object-templates.ts` (normalized object-literal templates)
+- `src/graph/presence.ts` — key-presence facts (observers and type flows) behind `redundant-conditional-spread`
+- `src/graph/statement-sequences.ts` — maximal duplicated statement runs
 - `src/rules/index.ts` — rule registry + rule metadata catalog (`category`, `tags`, `tier`)
-- `src/utils/hash.ts` — hashing: `hashTypeShape`, `hashFunctionBody`, `normalizeBody`, `normalizeText`
+- `src/rules/types.ts` — rule contracts plus reporting helpers (`diagnosticAtSite`, `withSite`, `reportDuplicateGroup`)
+- `src/utils/hash.ts` — hashing and normalization: `hashTypeShape`, `analyzeFunctionBody`, `normalizeText`, `hashText`
 
 ## Writing rules
 
 ### Single-file (TS) rules
 
-Rules live in `src/rules/ts/`. Each exports a `TSRule`. The `visit()` callback fires for every AST node.
+Rules live in `src/rules/ts/`. Each exports a `TSRule`. The `visit()` callback fires for every AST node of the kinds listed in `syntaxKinds` (every node when omitted; list them unless the rule truly needs all).
 
 ```typescript
 import * as ts from "typescript";
@@ -91,7 +97,7 @@ Optional `TSRule` fields:
 - `syntaxKinds: ts.SyntaxKind[]` — dispatch `visit()` only for these node kinds (perf)
 - `requiresTypeInfo: false` — rule is purely syntactic
 - `requiresStrictNullChecks: true` — rule is skipped (with a warning) when the tsconfig group lacks strictNullChecks
-- attach a `fix: FixEdit` (`{start, end, text}`) via `ctx.report(node, message, fix)` only when the replacement is provably semantics-preserving; the `fix` subcommand applies it mechanically
+- attach a `fix: FixEdit` (`{start, end, text}`) via `ctx.report(node, message, fix)` only when the replacement is provably semantics-preserving; the `fix` subcommand applies it mechanically. `replaceNodeWithNode(node, replacement, sourceFile)` builds the common "replace this node with that one" edit
 
 #### TSVisitContext
 
@@ -99,14 +105,16 @@ Optional `TSRule` fields:
 - `ctx.reportAtOffset(offset, message?)` — emit at arbitrary offset
 - `ctx.isNullable(node)` — type includes null/undefined
 - `ctx.isExternal(node)` — declaration from node_modules
-- `ctx.checker` — full `ts.TypeChecker`
-- `ctx.sourceFile`, `ctx.source`, `ctx.filename`
+- `ctx.checker` — full `ts.TypeChecker`; `ctx.semantics` — `SemanticServices` (cached type queries)
+- `ctx.sourceFile`, `ctx.source`, `ctx.filename`, `ctx.compilerOptions`
 
 ### Cross-file rules
 
-Rules live in `src/rules/cross-file/`. Each exports a `CrossFileRule` with `analyze(project: ProjectIndex)`. The `ProjectIndex` provides registries, call sites, and imports. Function/call-site entries carry `symbol?: ts.Symbol` for cross-module matching by declaration identity.
+Rules live in `src/rules/cross-file/`. Each exports a `CrossFileRule` with `analyze(graph: Graph, context?)`. The `Graph` (`src/graph/types.ts`) answers declaration queries without a checker and reference queries (calls, callers, readers, overloads, presence) with one; facts carry `NodeId`s for cross-module matching by declaration identity and a `Site` for reporting.
 
-Analysis runs one tsconfig group at a time. A rule that would mistake another group's usage for absence (e.g. `unused-export` in a monorepo) additionally implements `collectGlobalFacts(project, context)` + `finalizeGlobal(facts[])`: facts are collected per group (possibly in a worker, so they must survive `structuredClone` — no `ts.Node`/`ts.Symbol`), then merged once on the main thread. Keep `analyze()` as the single-group equivalent (`finalize([collectFacts(project, context)])`) — the test harness calls it directly.
+Analysis runs one tsconfig group at a time. A rule that would mistake another group's usage for absence (e.g. `unused-export` in a monorepo) additionally implements `collectGlobalFacts(graph, context)` + `finalizeGlobal(facts[])`: facts are collected per group (possibly in a worker, so they must survive `structuredClone` — no `ts.Node`/`ts.Symbol`), then merged once on the main thread. Keep `analyze()` as the single-group equivalent (`finalize([collectFacts(graph, context)])`) — the test harness calls it directly.
+
+Rules that judge a function by its call sites use `callerRule({ id, message, collect, judge })` from `src/rules/cross-file/callers.ts`: it wires `collectGlobalFacts` / `finalizeGlobal` / `analyze`, and `judge` yields `{ site, message }`. `collectVisibleCallerFacts` gathers the candidates and their call evidence; `everyCallSite(use, describe)` judges "every call site uses the result this way".
 
 ### TS AST patterns
 

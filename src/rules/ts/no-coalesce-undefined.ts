@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { replaceNodeWithNode } from "../../typecheck/utils.ts";
 
 /**
  * `x ?? undefined` where `x` can be undefined but never null: the expression
@@ -33,10 +34,6 @@ export const noCoalesceUndefined: TSRule = {
     const hasNull = parts.some((p) => (p.flags & ts.TypeFlags.Null) !== 0);
     if (!hasUndefined || hasNull) return;
 
-    ctx.report(node, undefined, {
-      start: node.getStart(ctx.sourceFile),
-      end: node.getEnd(),
-      text: node.left.getText(ctx.sourceFile),
-    });
+    ctx.report(node, undefined, replaceNodeWithNode(node, node.left, ctx.sourceFile));
   },
 };

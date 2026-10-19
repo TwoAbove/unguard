@@ -1,7 +1,8 @@
 import { dirname, join, resolve } from "node:path";
 import * as ts from "typescript";
 import type { SemanticServices } from "../../rules/types.ts";
-import { nodeId, type GraphInput } from "../graph.ts";
+import { isNullableType, isNullishLiteral, unwrapParens } from "../../typecheck/utils.ts";
+import { nodeId, siteOf, type GraphInput } from "../graph.ts";
 import type {
   ArgShape,
   CallFact,
@@ -12,8 +13,8 @@ import type {
   OverloadFamilyFact,
   ReaderFact,
   ReaderKind,
+  ResultUse,
   SignatureFact,
-  Site,
 } from "../types.ts";
 
 export interface ReferenceFacts {
@@ -23,6 +24,8 @@ export interface ReferenceFacts {
   overloads: Map<NodeId, OverloadFamilyFact>;
   readers: Map<NodeId, ReaderFact[]>;
   signatureConstraints: Set<NodeId>;
+  valueReferencedFunctions: Set<NodeId>;
+  nullableParameters: Set<NodeId>;
 }
 
 type SignatureNode =
@@ -42,6 +45,8 @@ export function buildReferences(input: GraphInput): ReferenceFacts {
     overloads: new Map(),
     readers: new Map(),
     signatureConstraints: new Set(),
+    valueReferencedFunctions: new Set(),
+    nullableParameters: new Set(),
   };
   const projectFiles = new Set(input.sourceFiles.map((sourceFile) => sourceFile.fileName));
 
@@ -67,7 +72,13 @@ export function buildReferences(input: GraphInput): ReferenceFacts {
       if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
         collectCall(node, sourceFile, semantics, facts.calls);
       } else if (ts.isIdentifier(node)) {
-        collectReader(node, sourceFile, semantics, facts.readers);
+        collectReader(node, sourceFile, semantics, facts);
+      } else if (ts.isParameter(node)) {
+        if (node.type !== undefined && isNullableType(semantics.checker, semantics.typeFromTypeNode(node.type))) {
+          facts.nullableParameters.add(nodeId(node, sourceFile));
+        }
+      } else if (ts.isObjectLiteralExpression(node)) {
+        if (!isBoundToVariable(node)) addFunctionMembers(node, facts.valueReferencedFunctions);
       } else if (checker !== undefined &&
         (ts.isClassDeclaration(node) || ts.isClassExpression(node) || ts.isInterfaceDeclaration(node))) {
         collectSignatureConstraints(node, checker, facts.signatureConstraints, visited);
@@ -376,16 +387,96 @@ function collectCall(
   const callee = sourceDeclarationId(canonicalDeclaration(symbol));
 
   const resolvedSignature = sourceDeclarationId(semantics.resolvedSignature(node)?.declaration);
+  const args = node.arguments ?? [];
 
   calls.push({
     id: nodeId(node, sourceFile),
     site: siteOf(node, sourceFile),
     callee,
-    args: [...(node.arguments ?? [])].map((argument) => argumentShape(argument, sourceFile, semantics)),
+    args: args.map((argument) => argumentShape(argument, sourceFile, semantics)),
     isNew: ts.isNewExpression(node),
     hasTypeArguments: node.typeArguments !== undefined,
     resolvedSignature,
+    nullableArgs: callee === null ? [] : args.map((argument) => ts.isSpreadElement(argument) || mayBeNullish(semantics.typeAtLocation(argument), semantics)),
+    resultUse: callee === null ? "other" : resultUse(node, semantics),
   });
+}
+
+function mayBeNullish(type: ts.Type, semantics: SemanticServices): boolean {
+  const known = type.isTypeParameter() ? semantics.checker.getBaseConstraintOfType(type) : type;
+  if (known === undefined || (known.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) return true;
+  return isNullableType(semantics.checker, known);
+}
+
+const NO_VALUE = ts.TypeFlags.Void | ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.Never |
+  ts.TypeFlags.Unknown | ts.TypeFlags.Any | ts.TypeFlags.TypeParameter;
+
+function carriesValue(type: ts.Type): boolean {
+  return type.isUnion() ? type.types.some(carriesValue) : (type.flags & NO_VALUE) === 0;
+}
+
+function resultUse(node: ts.CallExpression | ts.NewExpression, semantics: SemanticServices): ResultUse {
+  let outer: ts.Expression = node;
+  while (ts.isParenthesizedExpression(outer.parent) || ts.isAwaitExpression(outer.parent)) outer = outer.parent;
+  let statement: ts.Node = outer;
+  while (ts.isVoidExpression(statement.parent) || ts.isParenthesizedExpression(statement.parent)) statement = statement.parent;
+  if (ts.isExpressionStatement(statement.parent)) {
+    const awaited = semantics.awaitedType(semantics.typeAtLocation(node));
+    return awaited !== undefined && carriesValue(awaited) ? "discarded" : "other";
+  }
+
+  const parent = outer.parent;
+  const denied = ts.isNonNullExpression(parent) ||
+    (ts.isVariableDeclaration(parent) && parent.initializer === outer && nextStatementRejectsNullish(parent, semantics));
+  return denied && isNullableType(semantics.checker, semantics.typeAtLocation(outer)) ? "asserted-present" : "other";
+}
+
+function nextStatementRejectsNullish(declaration: ts.VariableDeclaration, semantics: SemanticServices): boolean {
+  if (!ts.isIdentifier(declaration.name)) return false;
+  const statement = declaration.parent.parent;
+  const container = statement.parent;
+  if (!ts.isVariableStatement(statement) || !(ts.isBlock(container) || ts.isSourceFile(container) ||
+    ts.isModuleBlock(container) || ts.isCaseOrDefaultClause(container))) {
+    return false;
+  }
+  const statements: readonly ts.Statement[] = container.statements;
+  const next = statements[statements.indexOf(statement) + 1];
+  const bound = semantics.symbolAtLocation(declaration.name);
+  if (next === undefined || bound === undefined) return false;
+  const isBound = (node: ts.Node) => ts.isIdentifier(node) && semantics.symbolAtLocation(node) === bound;
+
+  if (ts.isIfStatement(next)) {
+    return next.elseStatement === undefined && alwaysThrows(next.thenStatement) && testsNullish(next.expression, isBound);
+  }
+  if (!ts.isExpressionStatement(next) || !ts.isCallExpression(next.expression)) return false;
+  const call = next.expression;
+  const signature = semantics.resolvedSignature(call);
+  if (signature === undefined) return false;
+  const predicate = semantics.checker.getTypePredicateOfSignature(signature);
+  if (predicate?.kind !== ts.TypePredicateKind.AssertsIdentifier) return false;
+  const argument = call.arguments[predicate.parameterIndex];
+  return argument !== undefined && isBound(argument) &&
+    (predicate.type === undefined || !isNullableType(semantics.checker, predicate.type));
+}
+
+function alwaysThrows(statement: ts.Statement): boolean {
+  if (ts.isThrowStatement(statement)) return true;
+  if (!ts.isBlock(statement)) return false;
+  const last = statement.statements.at(-1);
+  return last !== undefined && ts.isThrowStatement(last) && statement.statements.slice(0, -1)
+    .every((entry) => ts.isExpressionStatement(entry) || ts.isVariableStatement(entry));
+}
+
+function testsNullish(condition: ts.Expression, isBound: (node: ts.Node) => boolean): boolean {
+  const node = unwrapParens(condition);
+  if (ts.isPrefixUnaryExpression(node)) {
+    return node.operator === ts.SyntaxKind.ExclamationToken && isBound(unwrapParens(node.operand));
+  }
+  if (!ts.isBinaryExpression(node)) return false;
+  const operator = node.operatorToken.kind;
+  if (operator === ts.SyntaxKind.BarBarToken) return testsNullish(node.left, isBound) || testsNullish(node.right, isBound);
+  if (operator !== ts.SyntaxKind.EqualsEqualsToken && operator !== ts.SyntaxKind.EqualsEqualsEqualsToken) return false;
+  return (isNullishLiteral(node.right) && isBound(node.left)) || (isNullishLiteral(node.left) && isBound(node.right));
 }
 
 function argumentShape(
@@ -421,20 +512,58 @@ function collectReader(
   node: ts.Identifier,
   sourceFile: ts.SourceFile,
   semantics: SemanticServices,
-  readers: Map<NodeId, ReaderFact[]>,
+  facts: Pick<ReferenceFacts, "readers" | "valueReferencedFunctions">,
 ): void {
   if (isSkippedIdentifier(node)) return;
   const symbol = resolveSymbol(node, semantics);
-  const declarationId = sourceDeclarationId(canonicalDeclaration(symbol));
+  const declaration = canonicalDeclaration(symbol);
+  const declarationId = sourceDeclarationId(declaration);
   if (declarationId === null) return;
   const reader: ReaderFact = {
     id: nodeId(node, sourceFile),
     site: siteOf(node, sourceFile),
     kind: readerKind(node, semantics),
   };
-  const entries = readers.get(declarationId);
-  if (entries === undefined) readers.set(declarationId, [reader]);
+  const entries = facts.readers.get(declarationId);
+  if (entries === undefined) facts.readers.set(declarationId, [reader]);
   else entries.push(reader);
+  if (reader.kind === "call" || reader.kind === "type-reference" || declaration === undefined) return;
+  if (declaresFunction(declaration)) {
+    facts.valueReferencedFunctions.add(declarationId);
+  } else if (reader.kind !== "keyed" && ts.isVariableDeclaration(declaration) && declaration.initializer !== undefined) {
+    const value = unwrapValue(declaration.initializer);
+    if (ts.isObjectLiteralExpression(value)) addFunctionMembers(value, facts.valueReferencedFunctions);
+  }
+}
+
+function isBoundToVariable(literal: ts.ObjectLiteralExpression): boolean {
+  let node: ts.Node = literal;
+  while (ts.isParenthesizedExpression(node.parent) || ts.isAsExpression(node.parent) || ts.isSatisfiesExpression(node.parent)) {
+    node = node.parent;
+  }
+  return ts.isVariableDeclaration(node.parent) && node.parent.initializer === node;
+}
+
+function unwrapValue(node: ts.Expression): ts.Expression {
+  let current = node;
+  while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function addFunctionMembers(literal: ts.ObjectLiteralExpression, escaped: Set<NodeId>): void {
+  for (const property of literal.properties) {
+    if (ts.isPropertyAssignment(property) && declaresFunction(property)) escaped.add(nodeId(property, property.getSourceFile()));
+  }
+}
+
+function declaresFunction(declaration: ts.Declaration): boolean {
+  if (isSignatureNode(declaration)) return true;
+  if (!ts.isVariableDeclaration(declaration) && !ts.isPropertyAssignment(declaration) && !ts.isPropertyDeclaration(declaration)) return false;
+  if (declaration.initializer === undefined) return false;
+  const initializer = unwrapParens(declaration.initializer);
+  return ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer);
 }
 
 function isSkippedIdentifier(node: ts.Identifier): boolean {
@@ -529,16 +658,4 @@ function sourceDeclarationId(declaration: ts.Declaration | undefined): NodeId | 
   const sourceFile = declaration.getSourceFile();
   if (sourceFile.isDeclarationFile || /(?:^|[\\/])node_modules(?:[\\/]|$)/.test(sourceFile.fileName)) return null;
   return nodeId(declaration, sourceFile);
-}
-
-function siteOf(node: ts.Node, sourceFile: ts.SourceFile): Site {
-  const start = node.getStart(sourceFile);
-  const location = sourceFile.getLineAndCharacterOfPosition(start);
-  return {
-    file: sourceFile.fileName,
-    line: location.line + 1,
-    column: location.character + 1,
-    start,
-    end: node.getEnd(),
-  };
 }

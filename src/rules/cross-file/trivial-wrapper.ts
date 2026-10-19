@@ -1,4 +1,4 @@
-import type { CrossFileRule, Diagnostic } from "../types.ts";
+import { type CrossFileRule, type Diagnostic, diagnosticAtSite } from "../types.ts";
 
 export const trivialWrapper: CrossFileRule = {
   id: "trivial-wrapper",
@@ -29,14 +29,11 @@ export const trivialWrapper: CrossFileRule = {
 
       const callee = functionsById.get(call.callee);
       if (callee === undefined) continue;
-      diagnostics.push({
-        ruleId: this.id,
-        severity: this.severity,
-        message: `Function "${fn.name}" trivially wraps "${callee.name}" without transformation`,
-        file: fn.site.file,
-        line: fn.site.line,
-        column: fn.site.column,
-      });
+      diagnostics.push(diagnosticAtSite(
+        this,
+        fn.site,
+        `Function "${fn.name}" trivially wraps "${callee.name}" without transformation`,
+      ));
     }
 
     return diagnostics;

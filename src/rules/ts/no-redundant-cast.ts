@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { replaceNodeWithNode } from "../../typecheck/utils.ts";
 
 export const noRedundantCast: TSRule = {
   kind: "ts",
@@ -32,11 +33,7 @@ export const noRedundantCast: TSRule = {
       ctx.semantics.isTypeAssignableTo(exprType, targetType) &&
       ctx.semantics.isTypeAssignableTo(targetType, exprType)
     ) {
-      ctx.report(node, undefined, {
-        start: node.getStart(ctx.sourceFile),
-        end: node.getEnd(),
-        text: node.expression.getText(ctx.sourceFile),
-      });
+      ctx.report(node, undefined, replaceNodeWithNode(node, node.expression, ctx.sourceFile));
     }
   },
 };

@@ -72,3 +72,11 @@ function bad_cast_only(): string {
   first as string;
   return first; // @expect return-type-widens-via-destructure
 }
+
+declare const rowNames: string[];
+class FirstRowName {
+  get value(): string {
+    const [name] = rowNames;
+    return name; // @expect return-type-widens-via-destructure
+  }
+}

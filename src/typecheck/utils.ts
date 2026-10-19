@@ -1,5 +1,13 @@
 import * as ts from "typescript";
-import type { SemanticServices, TSVisitContext } from "../rules/types.ts";
+import type { FixEdit, SemanticServices, TSVisitContext } from "../rules/types.ts";
+
+export function replaceNodeWithNode(node: ts.Node, replacement: ts.Node, sourceFile: ts.SourceFile): FixEdit {
+  return {
+    start: node.getStart(sourceFile),
+    end: node.getEnd(),
+    text: replacement.getText(sourceFile),
+  };
+}
 
 function hasFlags(flags: number, mask: number): boolean {
   return (flags & mask) !== 0;
@@ -107,6 +115,12 @@ export function isNullishLiteral(node: ts.Node): boolean {
   return ts.isIdentifier(node) && node.text === "undefined";
 }
 
+export function unwrapParens(node: ts.Expression): ts.Expression {
+  let current = node;
+  while (ts.isParenthesizedExpression(current)) current = current.expression;
+  return current;
+}
+
 /**
  * For binary equality tests like `x === null` or `null == x`, return the
  * identifier side and the literal side. Caller decides whether the literal
@@ -138,6 +152,21 @@ export function asSignatureLike(node: ts.Node): SignatureLike | null {
   if (ts.isFunctionExpression(node)) return node;
   if (ts.isArrowFunction(node)) return node;
   if (ts.isMethodDeclaration(node)) return node;
+  return null;
+}
+
+export function findEnclosingFunction(node: ts.Node): ts.FunctionLikeDeclaration | null {
+  for (let current: ts.Node | undefined = node.parent; current !== undefined; current = current.parent) {
+    const fn = asSignatureLike(current);
+    if (fn !== null) return fn;
+    if (
+      ts.isConstructorDeclaration(current) ||
+      ts.isGetAccessorDeclaration(current) ||
+      ts.isSetAccessorDeclaration(current)
+    ) {
+      return current;
+    }
+  }
   return null;
 }
 

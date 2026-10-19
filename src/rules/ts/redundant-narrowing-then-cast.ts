@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
+import { replaceNodeWithNode } from "../../typecheck/utils.ts";
 
 /**
  * Cast inside a narrowed branch whose target is something the narrowing
@@ -38,11 +39,7 @@ export const redundantNarrowingThenCast: TSRule = {
     const targetType = ctx.semantics.typeFromTypeNode(node.type);
     if (!ctx.semantics.isTypeAssignableTo(narrowedType, targetType)) return;
 
-    const fix = {
-      start: node.getStart(ctx.sourceFile),
-      end: node.getEnd(),
-      text: castSubject.getText(ctx.sourceFile),
-    };
+    const fix = replaceNodeWithNode(node, castSubject, ctx.sourceFile);
 
     // Path 1 — flow-proven, any narrowing construct (early return, else
     // branch, switch, assignment): the subject is a bare identifier whose

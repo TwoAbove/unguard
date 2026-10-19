@@ -76,7 +76,7 @@ try {
                 failure into the return type carrying the original error
 ```
 
-Plus more type-system evasions (`as any`, `x as unknown as T`, `@ts-ignore`), cross-file analysis (exports nobody imports, optional parameters no call site ever passes, arguments that are the same literal everywhere, dead overloads, copy-pasted functions), and more - the full catalog is in [Current Rules](#current-rules).
+Plus more type-system evasions (`as any`, `x as unknown as T`, `@ts-ignore`), cross-file analysis (exports nobody imports, optional parameters no call site ever passes, nullable parameters no caller passes null, return values every caller discards, arguments that are the same literal everywhere, dead overloads, copy-pasted functions and objects), and more - the full catalog is in [Current Rules](#current-rules).
 
 ## Why not just typescript-eslint?
 
@@ -123,6 +123,7 @@ unguard baseline                         # record current findings as the baseli
 unguard --no-baseline                    # ignore unguard.baseline.json for this scan
 unguard --concurrency 1                  # disable worker-thread parallelism, can be slow for large codebases
 unguard --no-cache                       # bypass on-disk diagnostic cache
+unguard --version                        # print the installed version
 ```
 
 ### Two tiers: findings and smells
@@ -283,6 +284,8 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 | `redundant-boolean-branch` | warning | finding | `cond ? true : false`, `if (cond) return true; return false;` -- the condition is already boolean. The inverted form is flagged only when the replacement is a readable `!cond`; compound conditions are never rewritten into `!(a && b)` |
 | `no-useless-await` | warning | finding | `await x` where `x`'s type has no `then` -- a no-op that suggests asynchrony that isn't there |
 | `redundant-destructure-default` | warning | finding | `const { a = fallback } = obj` where `obj.a` is required and non-undefined -- the default can never apply |
+| `redundant-conditional-spread` | warning | smell | `...(x === undefined ? {} : { x })` where nothing in the project can observe whether the key is present -- write the property directly. Conservative: external calls, `any`, JSX, and rest patterns count as observers, and so do observers in other tsconfig groups. Experimental |
+| `no-undefined-clobber` | warning | smell | `{ ...base, key: value }` where `base` always provides `key` and `value` may be `undefined` -- when it is, the overwrite erases the value the spread carried; guard the property or default it with `??`. Skips a literal `undefined` (a deliberate clear) and bases that only optionally provide the key. Experimental: patch/reset code sometimes erases on purpose |
 
 ### Error handling
 
@@ -314,6 +317,7 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 | `duplicate-inline-type-in-params` | warning | smell | Same inline `{ ... }` param type repeated across signatures |
 | `duplicate-file` | warning | smell | File with identical content to another file |
 | `near-duplicate-function` | warning | smell | Function bodies that match after renaming params and folding literals (strings, numbers, `null`/`undefined`) -- likely a copy-paste |
+| `near-duplicate-object` | warning | smell | Object literals with the same structure and keys where only the literal values or the outside values they reference differ -- build them with one factory. Covers implementations (at least two methods, 50 AST nodes overall and 20 in the method bodies) and data built from at least five property reads or calls. Local names don't count as differences; nested duplicates are reported once, at the outermost group |
 | `duplicate-statement-sequence` | warning | smell | Repeated block of statements across functions or files (identical text; lookup tables that vary only by literal data are not flagged) |
 | `trivial-wrapper` | warning | smell | Function that delegates to another without transformation (skipped when the wrapper specializes a type predicate, introduces generics, reorders args, or partially applies) |
 | `unused-export` | warning | smell | Exported function, type, or constant with no usages in the project. Imports resolve through the checker (path aliases, workspace packages) and usage is merged across tsconfig groups, so an export consumed by a sibling monorepo package counts as used. Consumers outside the scanned tree, such as a published package's API surface, are invisible to the analysis - hence smell tier |
@@ -321,6 +325,9 @@ Nullability-driven rules require `strictNullChecks` (or `strict`). Without it th
 | `optional-arg-never-used` | warning | smell | Optional param never provided at any call site -- remove it, inline the default |
 | `constant-argument` | warning | smell | Parameter receives the same literal at every call site across scanned tsconfig groups -- inline the value |
 | `explicit-null-arg` | warning | smell | `fn(null)` / `fn(undefined)` passed to a project function -- the parameter invites nullish values; redesign it so callers can omit the argument |
+| `nullable-param-never-null` | warning | smell | `(x: T \| undefined)` where no call site can pass null or undefined -- the nullish branch is dead; narrow the type. Skips functions also used as values, members of object literals handed elsewhere, and overloads |
+| `nullable-return-always-asserted` | warning | smell | `(): T \| null` where every caller (≥ 2) asserts the result with `!`, or throws / calls an `asserts` function on null in the very next statement -- throw inside the function and return `T` |
+| `return-value-never-used` | warning | smell | Function whose value every caller (≥ 2) discards as a bare statement (through `await` / `void`) -- return nothing, or use it. Returns typed `unknown`, `any`, or a type parameter don't count as values |
 | `dead-overload` | warning | smell | Overload signature with zero matching call sites across scanned tsconfig groups |
 
 

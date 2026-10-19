@@ -1,5 +1,5 @@
 import type { ConstantFact } from "../../graph/types.ts";
-import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup, withSite } from "../types.ts";
 
 /**
  * Iffy by this project's own standard: `hasNameOverlap` gates on identifier
@@ -19,12 +19,7 @@ export const duplicateConstantDeclaration: CrossFileRule = {
     for (const group of graph.duplicateGroups("constant")) {
       if (new Set(group.map((entry) => entry.site.file)).size < 2) continue;
       if (!hasNameOverlap(group)) continue;
-      const entries = group.map((entry) => ({
-        ...entry,
-        file: entry.site.file,
-        line: entry.site.line,
-        column: entry.site.column,
-      }));
+      const entries = group.map(withSite);
       reportDuplicateGroup(entries, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Constant "${e.name}" has identical value \`${e.valueText}\` to: ${others}`,

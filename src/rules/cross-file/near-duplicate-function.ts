@@ -1,4 +1,4 @@
-import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup } from "../types.ts";
+import { type CrossFileAnalysisContext, type CrossFileRule, type Diagnostic, reportDuplicateGroup, withSite } from "../types.ts";
 
 export const nearDuplicateFunction: CrossFileRule = {
   id: "near-duplicate-function",
@@ -14,12 +14,7 @@ export const nearDuplicateFunction: CrossFileRule = {
       if (group.every((e) => e.normalizedBodyLength < MIN_NORMALIZED_BODY)) continue;
       // Precision-first: tiny wrappers/callbacks are often intentionally repeated.
       if (group.every((entry) => !entry.hasControlFlow && entry.statementCount <= 2)) continue;
-      const entries = group.map((entry) => ({
-        ...entry,
-        file: entry.site.file,
-        line: entry.site.line,
-        column: entry.site.column,
-      }));
+      const entries = group.map(withSite);
       reportDuplicateGroup(entries, this.id, this.severity,
         (e) => `${e.name} (${e.file}:${e.line})`,
         (e, others) => `Function "${e.name}" is near-duplicate of: ${others}`,

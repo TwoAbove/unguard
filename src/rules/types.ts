@@ -72,7 +72,7 @@ export interface TSRule {
   visit(node: ts.Node, ctx: TSVisitContext): void;
 }
 
-import type { Graph } from "../graph/types.ts";
+import type { Graph, Site } from "../graph/types.ts";
 
 export interface CrossFileRule {
   id: string;
@@ -105,6 +105,30 @@ export type Rule = CrossFileRule | TSRule;
 
 export function isTSRule(r: Rule): r is TSRule {
   return "kind" in r && r.kind === "ts";
+}
+
+export function withSite<T extends { site: Site }>(entry: T) {
+  return {
+    ...entry,
+    file: entry.site.file,
+    line: entry.site.line,
+    column: entry.site.column,
+  };
+}
+
+export function diagnosticAtSite(
+  rule: Pick<CrossFileRule, "id" | "severity">,
+  site: Pick<Site, "file" | "line" | "column">,
+  message: string,
+): Diagnostic {
+  return {
+    ruleId: rule.id,
+    severity: rule.severity,
+    message,
+    file: site.file,
+    line: site.line,
+    column: site.column,
+  };
 }
 
 /**

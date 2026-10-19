@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { TSRule, TSVisitContext } from "../types.ts";
-import { includesBooleanType } from "../../typecheck/utils.ts";
+import { includesBooleanType, replaceNodeWithNode } from "../../typecheck/utils.ts";
 
 export const noDoubleNegationCoercion: TSRule = {
   kind: "ts",
@@ -17,11 +17,7 @@ export const noDoubleNegationCoercion: TSRule = {
     if (inner.operator !== ts.SyntaxKind.ExclamationToken) return;
 
     const operand = inner.operand;
-    const fix = {
-      start: node.getStart(ctx.sourceFile),
-      end: node.getEnd(),
-      text: operand.getText(ctx.sourceFile),
-    };
+    const fix = replaceNodeWithNode(node, operand, ctx.sourceFile);
 
     // Already boolean -> !! is a no-op everywhere, not just in eval contexts.
     const innerType = ctx.semantics.typeAtLocation(operand);
